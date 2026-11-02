@@ -1,0 +1,54 @@
+# Quality gates and merge policy. Protected by CODEOWNERS: agents can propose
+# changes here but a human approves them. Read by the orchestrator from M1.
+
+version: 1
+
+iteration:
+  max_implement_attempts: 4        # then escalate to a human
+  escalate_to_frontier_after_failures: 2
+
+budget:
+  per_run_usd: 5.00
+  per_day_usd: 25.00
+
+gates:
+  build:
+    required: true
+    warnings_as_errors: true
+  unit_tests:
+    required: true
+  coverage:
+    minimum_line_percent: 70
+    may_not_decrease: true
+  integration_tests:
+    required: true
+  secret_scan:
+    required: true
+  dependency_scan:
+    fail_on_severity: high
+  ai_review:
+    required: true
+    reviewer_must_differ_from_implementer: true
+    can_override_failing_gate: false   # a reviewer verdict never turns a red gate green
+  traceability:
+    every_criterion_has_a_test: true
+
+# Target app only: the site-plus-chatbot platform.
+chatbot_evals:
+  golden_set_per_demo_company: true
+  min_answer_accuracy: 0.90
+  require_citations: true
+  must_refuse_out_of_scope: true
+  forbid_unsourced_prices_or_policies: true
+
+merge_policy:
+  auto_merge_risk_levels: [low]
+  always_require_approver_for_paths:
+    - gates/**
+    - prompts/**
+    - db/migrations/**
+    - .github/**
+
+decision_layer:
+  confidence_threshold: 0.80
+  default_engine: llm              # jev can be enabled per decision once logged outcomes exist

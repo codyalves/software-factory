@@ -1,0 +1,65 @@
+# Local stack: docker compose -f deploy/docker-compose.yml --env-file .env up --build
+# Redis and MinIO are wired now and used from M1 (rate limits, locks, artifacts).
+
+name: software-factory
+
+x-factory-env: &factory-env
+  ConnectionStrings__Factory: Host=postgres;Port=5432;Database=factory;Username=factory;Password=${POSTGRES_PASSWORD:-factory}
+  DOTNET_ENVIRONMENT: Production
+
+services:
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_DB: factory
+      POSTGRES_USER: factory
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-factory}
+    ports: ["5432:5432"]
+    volumes: [pgdata:/var/lib/postgresql/data]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U factory -d factory"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    ports: ["6379:6379"]
+
+  minio:
+    image: minio/minio
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: factory
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-change-me-too}
+    ports: ["9000:9000", "9001:9001"]
+    volumes: [miniodata:/data]
+
+  api:
+    build: { context: .., dockerfile: deploy/Dockerfile, args: { PROJECT: Factory.Api } }
+    environment:
+      <<: *factory-env
+      ASPNETCORE_ENVIRONMENT: Production
+      Database__MigrateOnStartup: "true"
+      Database__MigrationsPath: /app/db/migrations
+      GitHub__WebhookSecret: ${GITHUB_WEBHOOK_SECRET:?set GITHUB_WEBHOOK_SECRET in .env}
+    ports: ["8080:8080"]
+    depends_on:
+      postgres: { condition: service_healthy }
+
+  orchestrator:
+    build: { context: .., dockerfile: deploy/Dockerfile, args: { PROJECT: Factory.Orchestrator } }
+    environment: *factory-env
+    depends_on:
+      postgres: { condition: service_healthy }
+      api: { condition: service_started }
+
+  workers:
+    build: { context: .., dockerfile: deploy/Dockerfile, args: { PROJECT: Factory.Workers } }
+    environment: *factory-env
+    depends_on:
+      postgres: { condition: service_healthy }
+
+volumes:
+  pgdata:
+  miniodata:

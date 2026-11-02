@@ -1,0 +1,10 @@
+# Anything that decides whether the factory's own output is acceptable needs a
+# human owner's approval. Agents may propose changes here but never merge them.
+# Enforce with branch protection: "Require review from Code Owners".
+
+/gates/                @codyalves
+/prompts/              @codyalves
+/db/migrations/        @codyalves
+/.github/              @codyalves
+/src/Factory.Domain/Runs/       @codyalves
+/src/Factory.Domain/Audit/      @codyalves

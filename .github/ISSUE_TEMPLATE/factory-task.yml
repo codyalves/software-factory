@@ -1,0 +1,33 @@
+name: Factory task
+description: Work for the software factory to pick up. The "factory" label starts a run.
+labels: [factory]
+body:
+  - type: textarea
+    id: summary
+    attributes:
+      label: What should change?
+      description: One or two sentences, from the user's point of view.
+    validations:
+      required: true
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance criteria
+      description: One testable statement per line. Each becomes a criterion traced to a test.
+      placeholder: |
+        - Given ..., when ..., then ...
+        - ...
+    validations:
+      required: true
+  - type: dropdown
+    id: risk
+    attributes:
+      label: Risk
+      description: High-risk work always waits for an approver before merge.
+      options: [low, medium, high]
+    validations:
+      required: true
+  - type: textarea
+    id: notes
+    attributes:
+      label: Constraints or context
