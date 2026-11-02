@@ -104,6 +104,9 @@ Each component lands when a measured need appears.
 
 - Sandboxed steps with no host mounts and restricted egress.
 - Short-lived, repo-scoped tokens. Agents never hold the merge token.
-- Gates, prompts, migrations and CI are CODEOWNERS-protected.
 - Issue text and repo content are data, never instructions to agents.
-- Per-run and per-day budgets, plus a `factory:stop` label.
+- A global pause switch (the factory starts paused) and a per-day budget
+  enforced from the cost ledger before each step is claimed (built in M1).
+  Per-run budgets and a `factory:stop` label come with the implement loop.
+- Gates, prompts, migrations, CI, pricing and the spending controls are
+  CODEOWNERS-protected, so an agent cannot raise its own budget.

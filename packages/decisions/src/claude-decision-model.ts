@@ -1,7 +1,8 @@
 import { APIError } from '@anthropic-ai/sdk';
 import type { MessageCreateParamsNonStreaming } from '@anthropic-ai/sdk/resources/messages';
-import type { Decision, DecisionModel, DecisionQuestion } from '@factory/domain';
+import type { Decision, DecisionContext, DecisionModel, DecisionQuestion } from '@factory/domain';
 import { z } from 'zod';
+import { priceUsd } from './pricing.ts';
 import type { Prompt } from './prompts.ts';
 
 /**
@@ -31,7 +32,16 @@ export interface MessagesClient {
     create(
       body: MessageCreateParamsNonStreaming,
       options?: { signal?: AbortSignal },
-    ): Promise<{ stop_reason: string | null; content: readonly { type: string; text?: string }[] }>;
+    ): Promise<{
+      stop_reason: string | null;
+      content: readonly { type: string; text?: string }[];
+      usage?: {
+        input_tokens: number;
+        output_tokens: number;
+        cache_creation_input_tokens?: number | null;
+        cache_read_input_tokens?: number | null;
+      };
+    }>;
   };
 }
 
@@ -64,9 +74,10 @@ export class ClaudeDecisionModel implements DecisionModel {
   async decide<Option extends string>(
     question: DecisionQuestion<Option>,
     state: string,
-    signal?: AbortSignal,
+    context: DecisionContext = {},
   ): Promise<Decision<Option>> {
     const { client, model, prompt, effort = 'low' } = this.#options;
+    const { signal } = context;
 
     let response: Awaited<ReturnType<MessagesClient['messages']['create']>>;
     try {
@@ -99,6 +110,21 @@ export class ClaudeDecisionModel implements DecisionModel {
       );
     } catch (error) {
       throw fromApiError(error);
+    }
+
+    // Meter before judging the answer: a rejected answer was still billed.
+    if (response.usage) {
+      const inputTokens =
+        response.usage.input_tokens +
+        (response.usage.cache_creation_input_tokens ?? 0) +
+        (response.usage.cache_read_input_tokens ?? 0);
+      const outputTokens = response.usage.output_tokens;
+      context.onUsage?.({
+        model,
+        inputTokens,
+        outputTokens,
+        usd: priceUsd(model, inputTokens, outputTokens),
+      });
     }
 
     if (response.stop_reason === 'refusal') {

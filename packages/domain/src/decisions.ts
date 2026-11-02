@@ -20,6 +20,23 @@ export interface Decision<Option extends string = string> {
   readonly promptVersion: string | null;
 }
 
+/** Tokens one model call consumed, and what they cost. */
+export interface ModelUsage {
+  readonly model: string;
+  readonly inputTokens: number;
+  readonly outputTokens: number;
+  readonly usd: number;
+}
+
+export interface DecisionContext {
+  readonly signal?: AbortSignal;
+  /**
+   * Called once per billed model call, including calls whose answer is then
+   * rejected, so spend is metered even when a decision fails.
+   */
+  readonly onUsage?: (usage: ModelUsage) => void;
+}
+
 /**
  * The decision layer. Implementations wrap a decision model (such as Jev) or
  * an LLM constrained to the options, so engines can be swapped and compared
@@ -30,7 +47,7 @@ export interface DecisionModel {
   decide<Option extends string>(
     question: DecisionQuestion<Option>,
     state: string,
-    signal?: AbortSignal,
+    context?: DecisionContext,
   ): Promise<Decision<Option>>;
 }
 

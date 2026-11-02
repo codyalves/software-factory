@@ -100,6 +100,14 @@ maintains the platform; chatbot answer quality is gated by eval suites.
   tokens). Delivery retries with backoff and honors GitHub's rate limits.
   Each comment carries a hidden marker, so if GitHub accepted a comment but
   the response was lost, the retry finds it instead of posting twice.
+- **Pause switch and daily budget.** The factory starts paused. Workers check
+  the switch and today's spend before claiming each step, and the outbox relay
+  checks the switch before sending, so pausing stops every call to Claude and
+  GitHub while webhooks keep being recorded. Every billed model call, including
+  ones whose answer was rejected, lands in `cost_ledger` at list price; once
+  today's total reaches the budget (default $3.00/day, about $100 a month),
+  workers stop claiming until midnight in the budget's time zone. Pause,
+  resume and budget changes are audit events naming who made them.
 
 ## Run it locally
 
@@ -112,6 +120,11 @@ docker compose -f deploy/docker-compose.yml --env-file .env up --build
 curl localhost:8080/healthz
 GITHUB_WEBHOOK_SECRET=<your secret> scripts/send-test-webhook.sh
 curl localhost:8080/audit/verify
+
+scripts/factory.sh status       # paused? spent today? (reads ADMIN_TOKEN from .env)
+scripts/factory.sh resume       # let workers spend
+scripts/factory.sh pause "done for today"
+scripts/factory.sh budget 2.00 America/New_York
 ```
 
 Develop and test:
@@ -129,7 +142,12 @@ FACTORY_TEST_DB=postgres://factory:factory@localhost:5432/factory pnpm test
 Only when you start it. Nothing is deployed, and nothing runs on a schedule.
 
 - **The factory** runs only while `docker compose up` (or `pnpm dev:*`) is
-  running. Workers without `ANTHROPIC_API_KEY` leave triage steps queued.
+  running, and even then it starts paused: nothing is spent until you run
+  `scripts/factory.sh resume`. Pause it again when you stop working.
+- **The daily budget** caps what workers spend per day. The check happens
+  before each step, so one step can finish slightly over the cap (a triage
+  step costs well under a cent). Per-run budgets come with the implement loop.
+- Workers without `ANTHROPIC_API_KEY` leave triage steps queued.
 - **CI** never calls the Claude API. Unit and integration tests use a fake model.
 - **The live triage check** runs only by hand: Actions → live-triage → Run workflow.
 - **GitHub** is only written to while the orchestrator runs with a GitHub App
