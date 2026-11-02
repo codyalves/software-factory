@@ -1,6 +1,6 @@
 /**
  * Live check of the triage decision layer against the real Claude API.
- * CI runs it on main when the ANTHROPIC_API_KEY secret is set; prints a
+ * Run by hand (the live-triage workflow, or locally); prints a
  * Markdown report and exits non-zero if any answer is missing or invalid.
  *
  *   ANTHROPIC_API_KEY=... node apps/workers/src/live-triage.ts
