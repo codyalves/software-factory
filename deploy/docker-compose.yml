@@ -3,9 +3,7 @@
 
 name: software-factory
 
-x-factory-env: &factory-env
-  ConnectionStrings__Factory: Host=postgres;Port=5432;Database=factory;Username=factory;Password=${POSTGRES_PASSWORD:-factory}
-  DOTNET_ENVIRONMENT: Production
+x-database-url: &database-url postgres://factory:${POSTGRES_PASSWORD:-factory}@postgres:5432/factory
 
 services:
   postgres:
@@ -36,27 +34,25 @@ services:
     volumes: [miniodata:/data]
 
   api:
-    build: { context: .., dockerfile: deploy/Dockerfile, args: { PROJECT: Factory.Api } }
+    build: { context: .., dockerfile: deploy/Dockerfile, args: { ENTRY: apps/api/src/server.ts } }
     environment:
-      <<: *factory-env
-      ASPNETCORE_ENVIRONMENT: Production
-      Database__MigrateOnStartup: "true"
-      Database__MigrationsPath: /app/db/migrations
-      GitHub__WebhookSecret: ${GITHUB_WEBHOOK_SECRET:?set GITHUB_WEBHOOK_SECRET in .env}
+      DATABASE_URL: *database-url
+      MIGRATE_ON_STARTUP: "true"
+      GITHUB_WEBHOOK_SECRET: ${GITHUB_WEBHOOK_SECRET:?set GITHUB_WEBHOOK_SECRET in .env}
     ports: ["8080:8080"]
     depends_on:
       postgres: { condition: service_healthy }
 
   orchestrator:
-    build: { context: .., dockerfile: deploy/Dockerfile, args: { PROJECT: Factory.Orchestrator } }
-    environment: *factory-env
+    build: { context: .., dockerfile: deploy/Dockerfile, args: { ENTRY: apps/orchestrator/src/main.ts } }
+    environment:
+      DATABASE_URL: *database-url
     depends_on:
       postgres: { condition: service_healthy }
       api: { condition: service_started }
 
   workers:
-    build: { context: .., dockerfile: deploy/Dockerfile, args: { PROJECT: Factory.Workers } }
-    environment: *factory-env
+    build: { context: .., dockerfile: deploy/Dockerfile, args: { ENTRY: apps/workers/src/main.ts } }
     depends_on:
       postgres: { condition: service_healthy }
 

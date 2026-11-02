@@ -1,5 +1,5 @@
 -- 0001_init: core schema for runs, evidence and the hash-chained audit log.
--- Applied by Factory.Infrastructure.Persistence.Migrator inside one transaction.
+-- Applied by packages/db/src/migrator.ts inside one transaction.
 
 -- ---------------------------------------------------------------------------
 -- Requirements and runs
@@ -132,7 +132,7 @@ create index outbox_unsent_idx on outbox (created_at) where sent_at is null;
 --   run_id  : lowercase uuid, or '' when the event is not tied to a run
 --   payload : canonical JSON text (sorted keys, no whitespace), stored verbatim
 --
--- The same formula lives in Factory.Domain.Audit.AuditChain so exported chains
+-- The same formula lives in packages/domain/src/audit-chain.ts so exported chains
 -- can be verified outside the database. Do not change it without a new
 -- chain version.
 

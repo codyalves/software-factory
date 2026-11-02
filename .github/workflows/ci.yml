@@ -13,6 +13,7 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # Job name is a required status check in branch protection; keep it stable.
   build-and-test:
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -34,32 +35,42 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      - uses: actions/setup-dotnet@v6
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
         with:
-          global-json-file: global.json
+          node-version: 26
+          cache: pnpm
 
-      - name: Restore
-        run: dotnet restore
+      - name: Install
+        run: pnpm install --frozen-lockfile
 
-      - name: Build (warnings are errors)
-        run: dotnet build --no-restore -c Release
+      - name: Lint and format
+        run: pnpm check
+
+      - name: Type-check
+        run: pnpm typecheck
 
       - name: Test (unit + Postgres integration)
-        run: dotnet test --no-build -c Release --logger trx --results-directory TestResults
+        run: pnpm test --reporter=default --reporter=junit --outputFile.junit=test-results/junit.xml
         env:
-          FACTORY_TEST_DB: Host=localhost;Port=5432;Username=factory;Password=factory;Database=factory
+          FACTORY_TEST_DB: postgres://factory:factory@localhost:5432/factory
 
       - name: Upload test results
         if: always()
         uses: actions/upload-artifact@v7
         with:
           name: test-results
-          path: TestResults
+          path: test-results
 
   compose:
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v7
+
       - name: Validate docker compose file
         run: GITHUB_WEBHOOK_SECRET=ci docker compose -f deploy/docker-compose.yml config --quiet
+
+      - name: Build the service image
+        run: docker build -f deploy/Dockerfile --build-arg ENTRY=apps/api/src/server.ts -t factory-api .

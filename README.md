@@ -23,7 +23,7 @@ Every transition writes an event to a hash-chained, append-only audit log in Pos
   and merges. Models answer bounded questions inside steps; they never decide
   what happens next on their own. ([ADR 0001](docs/adr/0001-deterministic-orchestrator.md))
 - **Evidence by construction.** A state change and its audit event commit in the
-  same transaction. The chain is verifiable both inside Postgres and in plain C#.
+  same transaction. The chain is verifiable both inside Postgres and in plain TypeScript.
   ([ADR 0003](docs/adr/0003-hash-chained-audit-log.md))
 - **Infrastructure retries are not agent iteration.** A network blip is retried
   with backoff; failing tests become a new implement attempt with the failure as input.
@@ -32,6 +32,22 @@ Every transition writes an event to a hash-chained, append-only audit log in Pos
 - **Host-agnostic.** GitHub first, behind a forge adapter. ([ADR 0002](docs/adr/0002-github-first-forge-adapter.md))
 
 Full design: [docs/design.md](docs/design.md).
+
+## Stack
+
+| Layer | Choice |
+| --- | --- |
+| Language | TypeScript (strict), run natively by Node 26 LTS with no build step |
+| API | Fastify |
+| Database | PostgreSQL 16, Kysely query builder, plain SQL migrations |
+| Validation | Zod |
+| Tests | Vitest, with real Postgres in CI |
+| Lint and format | Biome |
+| Monorepo | pnpm workspaces |
+| Dashboard (M2) | React |
+| Target app | Next.js |
+
+Why TypeScript: [ADR 0004](docs/adr/0004-typescript-stack.md).
 
 ## Status
 
@@ -54,7 +70,7 @@ maintains the platform; chatbot answer quality is gated by eval suites.
   and turns an issue labeled `factory` into a requirement and a run.
 - The orchestrator claims runs with `FOR UPDATE SKIP LOCKED` and moves them
   through the state machine, recording each transition.
-- `GET /audit/verify` recomputes the whole chain twice, in Postgres and in C#,
+- `GET /audit/verify` recomputes the whole chain twice, in Postgres and in TypeScript,
   and reports the first broken event.
 - The audit table rejects `UPDATE`, `DELETE` and `TRUNCATE`, including on
   individual partitions. If a privileged user disables that, the hash chain
@@ -62,7 +78,7 @@ maintains the platform; chatbot answer quality is gated by eval suites.
 
 ## Run it locally
 
-Requires Docker. The .NET 10 SDK is only needed to build outside Docker.
+Requires Docker. To work outside Docker you need Node 26 and pnpm (`corepack enable`).
 
 ```bash
 cp .env.example .env            # set GITHUB_WEBHOOK_SECRET
@@ -73,22 +89,27 @@ GITHUB_WEBHOOK_SECRET=<your secret> scripts/send-test-webhook.sh
 curl localhost:8080/audit/verify
 ```
 
-Run the tests (integration tests need a Postgres the user can create databases on):
+Develop and test:
 
 ```bash
-dotnet test
-FACTORY_TEST_DB="Host=localhost;Username=factory;Password=factory;Database=factory" dotnet test
+pnpm install
+pnpm verify                     # lint, type-check, unit tests
+
+# Postgres integration tests need a server the user can create databases on
+FACTORY_TEST_DB=postgres://factory:factory@localhost:5432/factory pnpm test
 ```
 
 ## Repository layout
 
 ```
-src/
-  Factory.Domain/          state machine, audit chain, retry policy, decision + forge interfaces
-  Factory.Infrastructure/  Postgres stores, migrator, GitHub webhook handling
-  Factory.Api/             webhook intake and read API
-  Factory.Orchestrator/    run state machine driver
-  Factory.Workers/         agent and gate step runners (M1)
+apps/
+  api/                     Fastify: webhook intake and read API
+  orchestrator/            run state machine driver
+  workers/                 agent and gate step runners (M1)
+packages/
+  domain/                  state machine, audit chain, retry policy, decision + forge interfaces
+  db/                      Kysely stores and migrator
+  github/                  webhook signature verification and parsing
 db/migrations/             SQL schema, including the audit chain functions
 gates/gates.yaml           gate thresholds and merge policy (CODEOWNERS-protected)
 prompts/                   versioned prompts (CODEOWNERS-protected)

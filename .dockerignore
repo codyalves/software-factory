@@ -1,6 +1,5 @@
-**/bin/
-**/obj/
+**/node_modules/
+coverage/
 .git/
 .github/
-TestResults/
 .env
