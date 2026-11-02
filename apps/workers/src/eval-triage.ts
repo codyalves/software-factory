@@ -15,7 +15,7 @@ import Anthropic from '@anthropic-ai/sdk';
 import { ClaudeDecisionModel, loadPrompt } from '@factory/decisions';
 import { DEFAULT_CONFIDENCE_THRESHOLD, TRIAGE_QUESTIONS, triageOutcome } from '@factory/domain';
 import { caseMaterial, type GoldenCase, labelProblems, loadGoldenSet } from './evals/golden.ts';
-import { type CaseRun, renderReport, summarize } from './evals/score.ts';
+import { type CaseRun, renderCaseDetails, renderReport, summarize } from './evals/score.ts';
 
 const { values: args } = parseArgs({ options: { out: { type: 'string' } } });
 
@@ -72,6 +72,7 @@ for (let i = 0; i < cases.length; i += CONCURRENCY) {
 
 const summary = summarize(runs, threshold);
 console.log(renderReport(summary, { model, prompt: prompt.version, threshold, spentUsd, errors }));
+console.log(renderCaseDetails(runs, threshold));
 
 if (args.out) {
   await writeFile(

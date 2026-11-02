@@ -168,3 +168,39 @@ export function renderReport(
   }
   return lines.join('\n');
 }
+
+/**
+ * Why each imperfect case came out the way it did: every scored answer that
+ * missed its label, and every fallback taken. Lets the job summary explain a
+ * run without downloading the results artifact.
+ */
+export function renderCaseDetails(runs: readonly CaseRun[], threshold: number): string {
+  const rows: string[] = [];
+  for (const run of runs) {
+    const misses = TRIAGE_QUESTIONS.flatMap((q) => {
+      const accepted = run.golden.labels[q.name] ?? [];
+      const decision = run.decisions.find((d) => d.question === q.name);
+      if (!decision || accepted.length >= q.options.length || accepted.includes(decision.choice)) return [];
+      const sure = decision.probability >= threshold ? '' : ', unsure';
+      return [
+        `${q.name}: ${decision.choice} at ${decision.probability.toFixed(2)}${sure} (label ${accepted.join('/')})`,
+      ];
+    });
+    if (misses.length === 0 && run.outcome.fallbacks.length === 0) continue;
+    const cell = (items: readonly string[]) => items.join('<br>') || 'none';
+    rows.push(
+      `| ${run.golden.id} | ${run.outcome.next}, ${run.outcome.riskTier} | ${cell(misses)} | ${cell(run.outcome.fallbacks)} |`,
+    );
+  }
+  if (rows.length === 0) return '';
+  return [
+    '### Case details',
+    '',
+    'Cases with a wrong answer or a fallback.',
+    '',
+    '| Case | Outcome | Answers that missed the label | Fallbacks |',
+    '| --- | --- | --- | --- |',
+    ...rows,
+    '',
+  ].join('\n');
+}
