@@ -1,7 +1,9 @@
 import { hostname } from 'node:os';
-import { createDb, StepQueue } from '@factory/db';
+import Anthropic from '@anthropic-ai/sdk';
+import { createDb, RunStore, StepQueue } from '@factory/db';
+import { ClaudeDecisionModel, loadPrompt } from '@factory/decisions';
 import { z } from 'zod';
-import { handlers } from './handlers.ts';
+import { createHandlers } from './handlers.ts';
 import { runSteps } from './step-runner.ts';
 
 const config = z
@@ -10,6 +12,10 @@ const config = z
     WORKER_ID: z.string().min(1).default(`${hostname()}-${process.pid}`),
     LEASE_MS: z.coerce.number().int().positive().default(60_000),
     IDLE_DELAY_MS: z.coerce.number().int().positive().default(2_000),
+    // Without a key the worker runs but does not take triage steps.
+    ANTHROPIC_API_KEY: z.preprocess((v) => (v === '' ? undefined : v), z.string().optional()),
+    TRIAGE_MODEL: z.string().default('claude-haiku-5-5'),
+    PROMPTS_DIR: z.string().default('prompts'),
   })
   .parse(process.env);
 
@@ -19,6 +25,17 @@ const controller = new AbortController();
 for (const signal of ['SIGINT', 'SIGTERM'] as const) {
   process.once(signal, () => controller.abort());
 }
+
+const decisionModel = config.ANTHROPIC_API_KEY
+  ? new ClaudeDecisionModel({
+      // The step queue owns retries (with backoff and an audit trail), so the SDK does not retry.
+      client: new Anthropic({ apiKey: config.ANTHROPIC_API_KEY, maxRetries: 0 }),
+      model: config.TRIAGE_MODEL,
+      prompt: await loadPrompt(config.PROMPTS_DIR, 'triage.v1'),
+    })
+  : null;
+
+const handlers = createHandlers({ runs: new RunStore(db), decisionModel });
 
 console.info(`worker ${config.WORKER_ID} started; handles: ${Object.keys(handlers).join(', ') || 'none'}`);
 await runSteps({

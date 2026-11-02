@@ -80,7 +80,10 @@ Delivery is at-least-once with idempotent handlers (`idempotency_key` per step,
 | 2. Small LLM | Summaries, criteria extraction, PR descriptions |
 | 3. Frontier LLM | Plan, implement, review |
 
-`IDecisionModel` has interchangeable engines (Jev, constrained LLM). Each
+`DecisionModel` has interchangeable engines. The first is Claude Haiku with
+structured outputs (`packages/decisions`); a Jev engine can be added behind the
+same interface and compared per question. Prompts live in `prompts/` and every
+decision records the prompt's name and content hash. Each
 decision is audited with its probability; below the confidence threshold the
 safe fallback applies. The reviewer runs on a different model than the implementer.
 

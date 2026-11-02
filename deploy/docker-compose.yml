@@ -56,6 +56,8 @@ services:
     build: { context: .., dockerfile: deploy/Dockerfile, args: { ENTRY: apps/workers/src/main.ts } }
     environment:
       DATABASE_URL: *database-url
+      # Without it the worker runs but leaves triage steps queued.
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
     depends_on:
       postgres: { condition: service_healthy }
 

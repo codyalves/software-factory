@@ -54,7 +54,7 @@ Why TypeScript: [ADR 0004](docs/adr/0004-typescript-stack.md).
 | Milestone | Scope | State |
 | --- | --- | --- |
 | M0 Skeleton | Schema, hash-chained audit log, signed webhook intake, run state machine, CI | Done |
-| **M1 Reliable core** | Queue, leases, retries, DLQ, outbox, gates, iteration loop, decision layer | **In progress**: step queue done |
+| **M1 Reliable core** | Queue, leases, retries, DLQ, outbox, gates, iteration loop, decision layer | **In progress**: step queue and triage done |
 | M2 Visible | Dashboard, DLQ replay, traceability report, cloud deploy with LB and CDN | Planned |
 | M3 More intake | CI-failure and error-webhook intake, scheduled self-review | Planned |
 | M4 Reference mode | Behavior traces from a reference app become issues and replay gates | Planned |
@@ -85,6 +85,15 @@ maintains the platform; chatbot answer quality is gated by eval suites.
   outcome, failure class and error details. `GET /admin/dead-letters` lists
   them and `POST /admin/steps/:id/replay` retries one, recording who did it.
   Admin routes need `Authorization: Bearer $ADMIN_TOKEN`.
+- **Triage through the decision layer.** A new run gets a triage step. A worker
+  asks Claude Haiku three closed questions (issue type, spec readiness, risk
+  tier) using structured outputs, so each answer is one of the allowed options
+  plus a probability. The orchestrator, not the model, then applies the rules:
+  low-confidence answers take safe fallbacks (unsure risk counts as high, an
+  unsure spec counts as not ready, an unsure type goes to a human), and the run
+  moves to Planning, Rejected or Escalated. Every decision is an audit event
+  with its probability, model and prompt hash, and an issue that needs
+  clarification gets a comment queued in the outbox.
 
 ## Run it locally
 

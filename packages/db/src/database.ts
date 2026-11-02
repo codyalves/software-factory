@@ -11,6 +11,7 @@ interface RequirementTable {
   issue_number: number;
   title: string;
   body: string;
+  risk_level: ColumnType<'low' | 'medium' | 'high' | null, never, 'low' | 'medium' | 'high'>;
   created_at: Generated<Date>;
 }
 
@@ -64,12 +65,23 @@ interface StepAttemptTable {
   error: ColumnType<unknown, string | null, string | null>;
 }
 
+interface OutboxTable {
+  id: Generated<string>;
+  run_id: string;
+  kind: string;
+  payload: ColumnType<unknown, string, never>;
+  attempts: Generated<number>;
+  created_at: Generated<Date>;
+  sent_at: Date | null;
+}
+
 export interface Database {
   requirement: RequirementTable;
   run: RunTable;
   inbound_delivery: InboundDeliveryTable;
   step: StepTable;
   step_attempt: StepAttemptTable;
+  outbox: OutboxTable;
 }
 
 export interface FactoryDb {

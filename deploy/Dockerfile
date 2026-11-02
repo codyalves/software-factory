@@ -14,6 +14,7 @@ COPY apps/workers/package.json apps/workers/
 COPY packages/domain/package.json packages/domain/
 COPY packages/db/package.json packages/db/
 COPY packages/github/package.json packages/github/
+COPY packages/decisions/package.json packages/decisions/
 RUN pnpm install --frozen-lockfile --prod
 
 FROM node:26-slim
@@ -25,5 +26,6 @@ COPY --from=deps /app ./
 COPY db ./db
 COPY apps ./apps
 COPY packages ./packages
+COPY prompts ./prompts
 USER node
 CMD ["sh", "-c", "exec node \"$FACTORY_ENTRY\""]

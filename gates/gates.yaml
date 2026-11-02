@@ -51,4 +51,4 @@ merge_policy:
 
 decision_layer:
   confidence_threshold: 0.80
-  default_engine: llm              # jev can be enabled per decision once logged outcomes exist
+  default_engine: claude           # claude-haiku-5-5 via structured outputs; jev can be enabled per decision once logged outcomes exist
