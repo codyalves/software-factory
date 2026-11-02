@@ -18,6 +18,11 @@ export interface Decision<Option extends string = string> {
   readonly engineVersion: string;
   /** Which prompt produced it, when the engine uses one (name and content hash). */
   readonly promptVersion: string | null;
+  /**
+   * Which exact question was asked: its name and a hash of its wording and
+   * options, so rewording a question shows up in the audit trail.
+   */
+  readonly questionVersion: string | null;
 }
 
 /** Tokens one model call consumed, and what they cost. */

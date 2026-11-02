@@ -86,14 +86,25 @@ maintains the platform; chatbot answer quality is gated by eval suites.
   them and `POST /admin/steps/:id/replay` retries one, recording who did it.
   Admin routes need `Authorization: Bearer $ADMIN_TOKEN`.
 - **Triage through the decision layer.** A new run gets a triage step. A worker
-  asks Claude Haiku three closed questions (issue type, spec readiness, risk
-  tier) using structured outputs, so each answer is one of the allowed options
-  plus a probability. The orchestrator, not the model, then applies the rules:
-  low-confidence answers take safe fallbacks (unsure risk counts as high, an
-  unsure spec counts as not ready, an unsure type goes to a human), and the run
-  moves to Planning, Rejected or Escalated. Every decision is an audit event
-  with its probability, model and prompt hash, and an issue that needs
-  clarification gets a comment queued in the outbox.
+  asks Claude Haiku seven closed questions using structured outputs, so each
+  answer is one of the allowed options plus a probability: the issue type,
+  whether the spec is testable, and five yes/no risk questions (does the work
+  touch authentication, stored data, payments, the platform and its
+  dependencies, or behavior users rely on). The orchestrator, not the model,
+  then applies the rules: the risk tier is the highest tier among the "yes"
+  answers, low-confidence answers take safe fallbacks (an unsure "no" counts
+  as "yes", an unsure spec counts as not ready, an unsure type goes to a
+  human), and the run moves to Planning, Rejected or Escalated. Every decision
+  is an audit event with its probability, model, prompt hash and question
+  hash; the tier is recorded with the factors that set it; and an issue that
+  needs clarification gets a comment queued in the outbox.
+- **Triage evals.** [`evals/triage/golden.json`](evals/triage/golden.json)
+  holds 20 hand-labeled issues, including prompt-injection attempts. A test
+  proves the labels and the triage rules agree; the `triage-eval` workflow
+  (run by hand) scores the live model: routing and tier accuracy, per-question
+  accuracy, confident mistakes, calibration (Brier score) and cost. It fails
+  on any unsafe outcome: work planned that should not be, or risk rated too
+  low. See [docs/evals.md](docs/evals.md).
 - **Outbox relay.** Side effects are written to the outbox in the same
   transaction as the state change that causes them, then posted to GitHub by
   the factory's own [GitHub App](docs/github-app.md) (short-lived, repo-scoped
@@ -149,7 +160,8 @@ Only when you start it. Nothing is deployed, and nothing runs on a schedule.
   step costs well under a cent). Per-run budgets come with the implement loop.
 - Workers without `ANTHROPIC_API_KEY` leave triage steps queued.
 - **CI** never calls the Claude API. Unit and integration tests use a fake model.
-- **The live triage check** runs only by hand: Actions → live-triage → Run workflow.
+- **The triage eval** runs only by hand: Actions → triage-eval → Run workflow
+  (about two cents per run with Haiku), or `pnpm eval:triage` locally.
 - **GitHub** is only written to while the orchestrator runs with a GitHub App
   configured; otherwise comments wait in the outbox.
 

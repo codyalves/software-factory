@@ -1,12 +1,16 @@
 import { fileURLToPath } from 'node:url';
 import { APIError } from '@anthropic-ai/sdk';
-import { TRIAGE_QUESTIONS } from '@factory/domain';
+import type { DecisionQuestion } from '@factory/domain';
 import { describe, expect, it, vi } from 'vitest';
 import { ClaudeDecisionModel, DecisionError, type MessagesClient } from './claude-decision-model.ts';
 import { loadPrompt } from './prompts.ts';
 
 const prompt = { text: 'You triage issues.', version: 'triage.v1@abc123' };
-const question = TRIAGE_QUESTIONS.riskTier;
+const question = {
+  name: 'risk_tier',
+  instructions: 'How risky is this change?',
+  options: ['low', 'medium', 'high'],
+} as const satisfies DecisionQuestion;
 
 function clientReturning(text: string, stopReason = 'end_turn'): MessagesClient {
   return {
@@ -33,6 +37,7 @@ describe('ClaudeDecisionModel', () => {
       engine: 'claude',
       engineVersion: 'claude-haiku-5-5',
       promptVersion: 'triage.v1@abc123',
+      questionVersion: expect.stringMatching(/^risk_tier@[0-9a-f]{12}$/),
     });
     const [request] = vi.mocked(client.messages.create).mock.calls[0] ?? [];
     expect(request).toMatchObject({

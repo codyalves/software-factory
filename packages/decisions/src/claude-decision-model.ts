@@ -3,7 +3,7 @@ import type { MessageCreateParamsNonStreaming } from '@anthropic-ai/sdk/resource
 import type { Decision, DecisionContext, DecisionModel, DecisionQuestion } from '@factory/domain';
 import { z } from 'zod';
 import { priceUsd } from './pricing.ts';
-import type { Prompt } from './prompts.ts';
+import { type Prompt, questionVersion } from './prompts.ts';
 
 /**
  * A decision engine failed. `retryable` says whether trying again could help;
@@ -157,6 +157,7 @@ export class ClaudeDecisionModel implements DecisionModel {
       engine: this.engine,
       engineVersion: model,
       promptVersion: prompt.version,
+      questionVersion: questionVersion(question),
     };
   }
 }
