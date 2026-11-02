@@ -4,7 +4,8 @@
 
 FROM node:26-slim AS deps
 WORKDIR /app
-RUN corepack enable
+# Node 25+ no longer bundles corepack, so pnpm is installed directly.
+RUN npm install -g pnpm@12.16.1
 # Manifests first, so dependency layers are cached until they change.
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 COPY apps/api/package.json apps/api/

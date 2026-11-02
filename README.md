@@ -78,7 +78,7 @@ maintains the platform; chatbot answer quality is gated by eval suites.
 
 ## Run it locally
 
-Requires Docker. To work outside Docker you need Node 26 and pnpm (`corepack enable`).
+Requires Docker. To work outside Docker you need Node 26 and pnpm (`npm install -g pnpm`).
 
 ```bash
 cp .env.example .env            # set GITHUB_WEBHOOK_SECRET
