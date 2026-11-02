@@ -14,7 +14,7 @@ erodes in long-horizon, multi-step systems.
 
 The run lifecycle is a state machine in code. Models answer bounded questions
 at branch points (issue type, risk tier, failure class, merge policy) through
-`IDecisionModel`, and generate artifacts inside steps. They never pick the next
+`DecisionModel`, and generate artifacts inside steps. They never pick the next
 state themselves.
 
 ## Consequences

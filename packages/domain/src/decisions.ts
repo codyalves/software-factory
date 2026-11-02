@@ -16,6 +16,8 @@ export interface Decision<Option extends string = string> {
   readonly probability: number;
   readonly engine: string;
   readonly engineVersion: string;
+  /** Which prompt produced it, when the engine uses one (name and content hash). */
+  readonly promptVersion: string | null;
 }
 
 /**
