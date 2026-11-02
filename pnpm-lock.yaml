@@ -212,7 +212,17 @@ importers:
         specifier: 4.6.7
         version: 4.6.7
 
-  apps/workers: {}
+  apps/workers:
+    dependencies:
+      '@factory/db':
+        specifier: workspace:*
+        version: link:../../packages/db
+      '@factory/domain':
+        specifier: workspace:*
+        version: link:../../packages/domain
+      zod:
+        specifier: 4.6.7
+        version: 4.6.7
 
   packages/db:
     dependencies:

@@ -63,6 +63,11 @@ Three deployables and three stores.
 | Budget exceeded | Escalate |
 | Permanent | Dead-letter immediately |
 
+Steps move `queued → running → succeeded`, or back to `queued` after a
+backoff, or to `dead_lettered`. A worker holds a lease while it runs and
+heartbeats at a third of the lease; the orchestrator's reaper reclaims expired
+leases as transient failures. Every attempt is recorded in `step_attempt`.
+
 Delivery is at-least-once with idempotent handlers (`idempotency_key` per step,
 `inbound_delivery` for webhooks). Side effects go through a transactional outbox.
 

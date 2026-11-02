@@ -1,4 +1,4 @@
-import { AuditStore, createDb, migrate, RunStore } from '@factory/db';
+import { AuditStore, createDb, migrate, RunStore, StepQueue } from '@factory/db';
 import { buildApp } from './app.ts';
 import { loadConfig } from './config.ts';
 
@@ -6,7 +6,13 @@ const config = loadConfig();
 const { db, pool, close } = createDb(config.DATABASE_URL);
 
 const app = buildApp(
-  { runs: new RunStore(db), audit: new AuditStore(db), webhookSecret: config.GITHUB_WEBHOOK_SECRET },
+  {
+    runs: new RunStore(db),
+    audit: new AuditStore(db),
+    steps: new StepQueue(db),
+    webhookSecret: config.GITHUB_WEBHOOK_SECRET,
+    adminToken: config.ADMIN_TOKEN,
+  },
   { logger: { level: config.LOG_LEVEL } },
 );
 

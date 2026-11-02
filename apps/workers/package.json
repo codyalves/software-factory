@@ -2,5 +2,10 @@
   "name": "@factory/workers",
   "version": "0.1.0",
   "private": true,
-  "type": "module"
+  "type": "module",
+  "dependencies": {
+    "@factory/db": "workspace:*",
+    "@factory/domain": "workspace:*",
+    "zod": "4.6.7"
+  }
 }

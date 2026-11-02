@@ -1,4 +1,4 @@
-import type { RunState } from '@factory/domain';
+import type { FailureClass, RunState } from '@factory/domain';
 import { type ColumnType, type Generated, Kysely, PostgresDialect } from 'kysely';
 import pg from 'pg';
 
@@ -29,10 +29,47 @@ interface InboundDeliveryTable {
   received_at: Generated<Date>;
 }
 
+export type StepStatus = 'queued' | 'running' | 'succeeded' | 'dead_lettered';
+
+interface StepTable {
+  id: Generated<string>;
+  run_id: string;
+  kind: string;
+  status: StepStatus;
+  attempt: Generated<number>;
+  idempotency_key: string;
+  payload: ColumnType<unknown, string, string>;
+  max_attempts: Generated<number>;
+  timeout_ms: Generated<number>;
+  run_after: Generated<Date>;
+  lease_owner: string | null;
+  lease_until: Date | null;
+  heartbeat_at: Date | null;
+  last_error: string | null;
+  result: ColumnType<unknown, string | null, string | null>;
+  failure_class: FailureClass | null;
+  finished_at: Date | null;
+  created_at: Generated<Date>;
+  updated_at: Generated<Date>;
+}
+
+interface StepAttemptTable {
+  step_id: string;
+  attempt: number;
+  worker: string;
+  started_at: Generated<Date>;
+  finished_at: Date | null;
+  outcome: 'succeeded' | 'retry_scheduled' | 'dead_lettered' | null;
+  failure_class: FailureClass | null;
+  error: ColumnType<unknown, string | null, string | null>;
+}
+
 export interface Database {
   requirement: RequirementTable;
   run: RunTable;
   inbound_delivery: InboundDeliveryTable;
+  step: StepTable;
+  step_attempt: StepAttemptTable;
 }
 
 export interface FactoryDb {
