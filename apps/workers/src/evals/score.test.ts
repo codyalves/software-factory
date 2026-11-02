@@ -1,7 +1,7 @@
 import { type Decision, RISK_QUESTIONS, triageOutcome } from '@factory/domain';
 import { describe, expect, it } from 'vitest';
 import type { GoldenCase } from './golden.ts';
-import { renderReport, summarize } from './score.ts';
+import { renderCaseDetails, renderReport, summarize } from './score.ts';
 
 const THRESHOLD = 0.8;
 
@@ -116,5 +116,32 @@ describe('renderReport', () => {
     expect(report).toContain('**Unsafe outcomes: 1**');
     expect(report).toContain('| case | planned-when-it-should-not |');
     expect(report).toContain('$0.0123');
+  });
+});
+
+describe('renderCaseDetails', () => {
+  it('explains each imperfect case and skips the perfect ones', () => {
+    const details = renderCaseDetails(
+      [
+        run(golden({ id: 'perfect' })),
+        run(golden({ id: 'missed', next: ['Planning', 'Escalated'] }), {
+          spec_ready: ['no', 0.9],
+          risk_data: ['no', 0.5],
+        }),
+      ],
+      THRESHOLD,
+    );
+
+    expect(details).not.toContain('| perfect |');
+    expect(details).toContain(
+      '| missed | Escalated, high | spec_ready: no at 0.90 (label yes) | risk_data no below confidence threshold; treated as yes |',
+    );
+  });
+
+  it('marks unsure misses and prints nothing for a clean run', () => {
+    expect(renderCaseDetails([run(golden())], THRESHOLD)).toBe('');
+    expect(renderCaseDetails([run(golden(), { risk_auth: ['yes', 0.6] })], THRESHOLD)).toContain(
+      'risk_auth: yes at 0.60, unsure (label no)',
+    );
   });
 });
