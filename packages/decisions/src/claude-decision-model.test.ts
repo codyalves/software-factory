@@ -49,6 +49,34 @@ describe('ClaudeDecisionModel', () => {
     expect(JSON.stringify(request?.messages)).toContain('<material>');
   });
 
+  it('reports billed usage, counting cache tokens as input, before checking the answer', async () => {
+    const client: MessagesClient = {
+      messages: {
+        create: vi.fn().mockResolvedValue({
+          stop_reason: 'end_turn',
+          content: [{ type: 'text', text: '{"choice":"purple","probability":0.9}' }],
+          usage: {
+            input_tokens: 800,
+            output_tokens: 40,
+            cache_creation_input_tokens: 150,
+            cache_read_input_tokens: 50,
+          },
+        }),
+      },
+    };
+    const onUsage = vi.fn();
+
+    // An invalid answer still cost money, so usage is reported before the error.
+    await expect(modelWith(client).decide(question, 'x', { onUsage })).rejects.toThrow();
+
+    expect(onUsage).toHaveBeenCalledWith({
+      model: 'claude-haiku-5-5',
+      inputTokens: 1_000,
+      outputTokens: 40,
+      usd: (1_000 * 0.1 + 40 * 0.5) / 1_000_000,
+    });
+  });
+
   it('accepts an option returned in a different case', async () => {
     const decision = await modelWith(clientReturning('{"choice":"HIGH","probability":0.9}')).decide(
       question,

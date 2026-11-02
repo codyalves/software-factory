@@ -31,6 +31,7 @@ function model(decide: DecisionModel['decide']): DecisionModel {
 }
 
 const signal = new AbortController().signal;
+const context = () => ({ signal, recordUsage: vi.fn() });
 
 describe('triage handler', () => {
   it('asks all three questions about the issue and returns the decisions', async () => {
@@ -54,7 +55,7 @@ describe('triage handler', () => {
     }
     const handler = createTriageHandler({ model: model(decide), loadIssue: async () => issue });
 
-    const result = await handler(step, { signal });
+    const result = await handler(step, context());
 
     expect(result).toMatchObject({
       decisions: [{ question: 'issue_type' }, { question: 'spec_ready' }, { question: 'risk_tier' }],
@@ -64,10 +65,38 @@ describe('triage handler', () => {
     expect(materials[0]).toContain('Issue #42: Add a contact page');
   });
 
+  it('passes billed usage through to the step runner', async () => {
+    const usage = { model: 'claude-haiku-5-5', inputTokens: 900, outputTokens: 40, usd: 0.00011 };
+    function decide<Option extends string>(
+      question: DecisionQuestion<Option>,
+      _material: string,
+      ctx?: { onUsage?: (u: typeof usage) => void },
+    ): Promise<Decision<Option>> {
+      ctx?.onUsage?.(usage);
+      const [choice] = question.options;
+      if (choice === undefined) throw new Error('question has no options');
+      return Promise.resolve({
+        question: question.name,
+        choice,
+        probability: 0.9,
+        engine: 'fake',
+        engineVersion: '1',
+        promptVersion: null,
+      });
+    }
+    const handler = createTriageHandler({ model: model(decide), loadIssue: async () => issue });
+    const ctx = context();
+
+    await handler(step, ctx);
+
+    expect(ctx.recordUsage).toHaveBeenCalledTimes(3);
+    expect(ctx.recordUsage).toHaveBeenCalledWith(usage);
+  });
+
   it('fails permanently when the run has no issue', async () => {
     const handler = createTriageHandler({ model: model(vi.fn()), loadIssue: async () => null });
 
-    await expect(handler(step, { signal })).rejects.toMatchObject({ failureClass: 'permanent' });
+    await expect(handler(step, context())).rejects.toMatchObject({ failureClass: 'permanent' });
   });
 
   it('passes rate limits through as transient, with Retry-After', async () => {
@@ -78,7 +107,7 @@ describe('triage handler', () => {
       loadIssue: async () => issue,
     });
 
-    const error = await handler(step, { signal }).catch((e: unknown) => e);
+    const error = await handler(step, context()).catch((e: unknown) => e);
 
     expect(error).toBeInstanceOf(StepError);
     expect(error).toMatchObject({ failureClass: 'transient', status: 429, retryAfterMs: 7_000 });
@@ -92,6 +121,6 @@ describe('triage handler', () => {
       loadIssue: async () => issue,
     });
 
-    await expect(handler(step, { signal })).rejects.toMatchObject({ failureClass: 'permanent' });
+    await expect(handler(step, context())).rejects.toMatchObject({ failureClass: 'permanent' });
   });
 });

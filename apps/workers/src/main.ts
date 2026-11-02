@@ -1,6 +1,6 @@
 import { hostname } from 'node:os';
 import Anthropic from '@anthropic-ai/sdk';
-import { createDb, RunStore, StepQueue } from '@factory/db';
+import { createDb, FactoryControl, RunStore, StepQueue } from '@factory/db';
 import { ClaudeDecisionModel, loadPrompt } from '@factory/decisions';
 import { z } from 'zod';
 import { createHandlers } from './handlers.ts';
@@ -21,6 +21,7 @@ const config = z
 
 const { db, close } = createDb(config.DATABASE_URL);
 const controller = new AbortController();
+const control = new FactoryControl(db);
 
 for (const signal of ['SIGINT', 'SIGTERM'] as const) {
   process.once(signal, () => controller.abort());
@@ -40,6 +41,7 @@ const handlers = createHandlers({ runs: new RunStore(db), decisionModel });
 console.info(`worker ${config.WORKER_ID} started; handles: ${Object.keys(handlers).join(', ') || 'none'}`);
 await runSteps({
   queue: new StepQueue(db),
+  canClaim: () => control.allowsWork(),
   worker: config.WORKER_ID,
   handlers,
   leaseMs: config.LEASE_MS,

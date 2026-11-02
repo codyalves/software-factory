@@ -1,4 +1,4 @@
-import type { AuditStore, IntakeResult, RunStore, StepQueue } from '@factory/db';
+import type { AuditStore, FactoryControl, IntakeResult, RunStore, StepQueue } from '@factory/db';
 import { isSignatureValid, parseIssueEvent } from '@factory/github';
 import Fastify, { type FastifyInstance, type FastifyServerOptions } from 'fastify';
 import { z } from 'zod';
@@ -8,6 +8,7 @@ export interface AppDependencies {
   readonly runs: Pick<RunStore, 'createFromIssue' | 'get'>;
   readonly audit: Pick<AuditStore, 'verify' | 'verifyInDatabase'>;
   readonly steps: Pick<StepQueue, 'listDeadLetters' | 'replay'>;
+  readonly control: Pick<FactoryControl, 'status' | 'pause' | 'resume' | 'setBudget'>;
   readonly webhookSecret: string;
   readonly adminToken?: string | undefined;
 }
@@ -56,7 +57,12 @@ export function buildApp(deps: AppDependencies, options: FastifyServerOptions = 
     });
   });
 
-  app.register(adminRoutes, { prefix: '/admin', steps: deps.steps, adminToken: deps.adminToken });
+  app.register(adminRoutes, {
+    prefix: '/admin',
+    steps: deps.steps,
+    control: deps.control,
+    adminToken: deps.adminToken,
+  });
 
   app.get('/runs/:id', async (request, reply) => {
     const params = runParams.safeParse(request.params);

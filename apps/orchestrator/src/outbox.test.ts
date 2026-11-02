@@ -60,6 +60,18 @@ describe('classifyDelivery', () => {
 });
 
 describe.skipIf(!TEST_DATABASE_URL)('outbox relay', () => {
+  it('holds messages while the factory is paused', async () => {
+    await using t = await createTestDatabase();
+    await queueComment(t);
+    const thread = issueThread();
+    const relay = new OutboxRelay(t.db, instant);
+
+    expect(await deliverNextOutbox(relay, thread.forge, async () => ({ ok: false }))).toBeNull();
+    expect(thread.stored).toHaveLength(0);
+    expect(await deliverNextOutbox(relay, thread.forge, async () => ({ ok: true }))).toMatch(/sent$/);
+    expect(thread.stored).toHaveLength(1);
+  });
+
   it('posts a queued comment once and records it', async () => {
     await using t = await createTestDatabase();
     await queueComment(t);

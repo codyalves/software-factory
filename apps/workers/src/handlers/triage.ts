@@ -20,7 +20,7 @@ export interface TriageDependencies {
  * It only answers; the orchestrator records the decisions and moves the run.
  */
 export function createTriageHandler(deps: TriageDependencies): StepHandler {
-  return async (step, { signal }) => {
+  return async (step, { signal, recordUsage }) => {
     const issue = await deps.loadIssue(step.runId);
     if (!issue) {
       throw new StepError(`no issue found for run ${step.runId}`, { failureClass: 'permanent' });
@@ -35,7 +35,9 @@ export function createTriageHandler(deps: TriageDependencies): StepHandler {
 
     try {
       const decisions = await Promise.all(
-        Object.values(TRIAGE_QUESTIONS).map((question) => deps.model.decide(question, material, signal)),
+        Object.values(TRIAGE_QUESTIONS).map((question) =>
+          deps.model.decide(question, material, { signal, onUsage: recordUsage }),
+        ),
       );
       return { decisions } satisfies TriageResult;
     } catch (error) {

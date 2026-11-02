@@ -51,7 +51,12 @@ export function classifyDelivery(error: unknown): DeliveryFailure {
 export async function deliverNextOutbox(
   relay: Pick<OutboxRelay, 'deliverNext'>,
   forge: ForgeAdapter,
+  /** The pause switch. While paused, messages wait in the outbox. */
+  allowsSending: () => Promise<{ ok: boolean }> = async () => ({ ok: true }),
 ): Promise<string | null> {
+  if (!(await allowsSending()).ok) {
+    return null;
+  }
   const delivery = await relay.deliverNext(createOutboxSender(forge), classifyDelivery);
   if (!delivery) {
     return null;

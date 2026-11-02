@@ -79,6 +79,28 @@ interface OutboxTable {
   result: ColumnType<unknown, never, string | null>;
 }
 
+interface CostLedgerTable {
+  id: Generated<string>;
+  run_id: string;
+  step_id: string | null;
+  model: string;
+  tokens_in: number;
+  tokens_out: number;
+  // numeric comes back from pg as a string, so the exact cents survive.
+  usd: ColumnType<string, string, never>;
+  at: Generated<Date>;
+}
+
+interface FactoryControlTable {
+  id: Generated<boolean>;
+  paused: boolean;
+  reason: string | null;
+  changed_by: string;
+  changed_at: Date;
+  daily_budget_usd: ColumnType<string, never, string>;
+  budget_time_zone: string;
+}
+
 export interface Database {
   requirement: RequirementTable;
   run: RunTable;
@@ -86,6 +108,8 @@ export interface Database {
   step: StepTable;
   step_attempt: StepAttemptTable;
   outbox: OutboxTable;
+  cost_ledger: CostLedgerTable;
+  factory_control: FactoryControlTable;
 }
 
 export interface FactoryDb {

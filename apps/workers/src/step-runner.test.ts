@@ -30,6 +30,7 @@ function options(overrides: Partial<StepRunnerOptions> = {}): StepRunnerOptions 
       heartbeat: vi.fn().mockResolvedValue(true),
       complete: vi.fn().mockResolvedValue(true),
       fail: vi.fn().mockResolvedValue({ retry: true, delayMs: 0, reason: '' }),
+      recordUsage: vi.fn().mockResolvedValue(undefined),
     },
     ...overrides,
   };
@@ -111,6 +112,31 @@ describe('executeStep', () => {
     expect(queue.fail).not.toHaveBeenCalled();
   });
 
+  it('records billed usage even when the step fails', async () => {
+    const usage = { model: 'claude-haiku-5-5', inputTokens: 10, outputTokens: 2, usd: 0.000002 };
+    const o = options({
+      handlers: {
+        gate: async (_step, { recordUsage }) => {
+          recordUsage(usage);
+          throw new StepError('bad answer', { failureClass: 'permanent' });
+        },
+      },
+    });
+
+    await executeStep(step, o);
+
+    expect(o.queue.recordUsage).toHaveBeenCalledWith(step, [usage]);
+    expect(o.queue.fail).toHaveBeenCalled();
+  });
+
+  it('does not touch the ledger when nothing was billed', async () => {
+    const o = options({ handlers: { gate: async () => null } });
+
+    await executeStep(step, o);
+
+    expect(o.queue.recordUsage).not.toHaveBeenCalled();
+  });
+
   it('dead-letters a step kind with no handler', async () => {
     const o = options();
 
@@ -139,6 +165,45 @@ describe('runSteps', () => {
     await runSteps(o);
 
     expect(o.queue.claim).toHaveBeenCalledWith('w', ['gate', 'triage'], 30_000);
+  });
+});
+
+describe('runSteps work gate', () => {
+  it('claims nothing while the gate is closed, and logs the reason once', async () => {
+    const controller = new AbortController();
+    let checks = 0;
+    const o = options({
+      signal: controller.signal,
+      handlers: { gate: async () => null },
+      canClaim: async () => {
+        if (++checks === 3) controller.abort();
+        return { ok: false, reason: 'paused by cody' };
+      },
+    });
+
+    await runSteps(o);
+
+    expect(o.queue.claim).not.toHaveBeenCalled();
+    expect(o.log.info).toHaveBeenCalledWith('not taking new work: paused by cody');
+    expect(vi.mocked(o.log.info).mock.calls.filter(([m]) => String(m).startsWith('not taking'))).toHaveLength(
+      1,
+    );
+  });
+
+  it('treats a failed gate check as closed', async () => {
+    const controller = new AbortController();
+    const o = options({
+      signal: controller.signal,
+      handlers: { gate: async () => null },
+      canClaim: async () => {
+        controller.abort();
+        throw new Error('db down');
+      },
+    });
+
+    await runSteps(o);
+
+    expect(o.queue.claim).not.toHaveBeenCalled();
   });
 });
 

@@ -1,5 +1,5 @@
 import { createHmac } from 'node:crypto';
-import { AuditStore, RunStore, StepQueue } from '@factory/db';
+import { AuditStore, FactoryControl, RunStore, StepQueue } from '@factory/db';
 import { createTestDatabase, TEST_DATABASE_URL } from '@factory/db/testing';
 import { describe, expect, it, vi } from 'vitest';
 import { type AppDependencies, buildApp } from './app.ts';
@@ -49,6 +49,12 @@ function fakeDeps(): AppDependencies {
     steps: {
       listDeadLetters: vi.fn().mockResolvedValue([]),
       replay: vi.fn().mockResolvedValue(true),
+    },
+    control: {
+      status: vi.fn().mockResolvedValue({ paused: true }),
+      pause: vi.fn().mockResolvedValue({ paused: true }),
+      resume: vi.fn().mockResolvedValue({ paused: false }),
+      setBudget: vi.fn().mockResolvedValue({ paused: true }),
     },
     adminToken: ADMIN_TOKEN,
   };
@@ -125,6 +131,53 @@ describe('admin routes', () => {
     expect(deps.steps.replay).toHaveBeenCalledWith(STEP_ID, 'codyalves');
   });
 
+  it('pause and resume on behalf of the named actor', async () => {
+    const deps = fakeDeps();
+    const app = buildApp(deps);
+
+    const paused = await app.inject({
+      method: 'POST',
+      url: '/admin/pause',
+      headers: admin,
+      payload: { actor: 'codyalves', reason: 'done for the day' },
+    });
+    const resumed = await app.inject({
+      method: 'POST',
+      url: '/admin/resume',
+      headers: admin,
+      payload: { actor: 'codyalves' },
+    });
+
+    expect([paused.statusCode, resumed.statusCode]).toEqual([200, 200]);
+    expect(deps.control.pause).toHaveBeenCalledWith('codyalves', 'done for the day');
+    expect(deps.control.resume).toHaveBeenCalledWith('codyalves');
+  });
+
+  it('refuse a pause without a reason', async () => {
+    const response = await buildApp(fakeDeps()).inject({
+      method: 'POST',
+      url: '/admin/pause',
+      headers: admin,
+      payload: { actor: 'codyalves' },
+    });
+
+    expect(response.statusCode).toBe(400);
+  });
+
+  it('validate the budget and its time zone', async () => {
+    const deps = fakeDeps();
+    const app = buildApp(deps);
+    const put = (payload: Record<string, unknown>) =>
+      app.inject({ method: 'PUT', url: '/admin/budget', headers: admin, payload });
+
+    const ok = await put({ actor: 'codyalves', dailyBudgetUsd: 2.5, timeZone: 'America/New_York' });
+    const badZone = await put({ actor: 'codyalves', dailyBudgetUsd: 2.5, timeZone: 'Mars/Olympus' });
+    const negative = await put({ actor: 'codyalves', dailyBudgetUsd: -1 });
+
+    expect([ok.statusCode, badZone.statusCode, negative.statusCode]).toEqual([200, 400, 400]);
+    expect(deps.control.setBudget).toHaveBeenCalledWith('codyalves', 2.5, 'America/New_York');
+  });
+
   it('refuse a replay without an actor', async () => {
     const response = await buildApp(fakeDeps()).inject({
       method: 'POST',
@@ -144,6 +197,7 @@ describe.skipIf(!TEST_DATABASE_URL)('API with Postgres', () => {
       runs: new RunStore(t.db),
       audit: new AuditStore(t.db),
       steps: new StepQueue(t.db),
+      control: new FactoryControl(t.db),
       webhookSecret: SECRET,
     });
 
@@ -167,6 +221,7 @@ describe.skipIf(!TEST_DATABASE_URL)('API with Postgres', () => {
       runs: new RunStore(t.db),
       audit: new AuditStore(t.db),
       steps,
+      control: new FactoryControl(t.db),
       webhookSecret: SECRET,
       adminToken: ADMIN_TOKEN,
     });
@@ -198,5 +253,31 @@ describe.skipIf(!TEST_DATABASE_URL)('API with Postgres', () => {
     });
 
     expect([replay.statusCode, again.statusCode]).toEqual([202, 409]);
+  });
+
+  it('starts paused, resumes through the admin API, and audits the change', async () => {
+    await using t = await createTestDatabase();
+    const app = buildApp({
+      runs: new RunStore(t.db),
+      audit: new AuditStore(t.db),
+      steps: new StepQueue(t.db),
+      control: new FactoryControl(t.db),
+      webhookSecret: SECRET,
+      adminToken: ADMIN_TOKEN,
+    });
+
+    const before = await app.inject({ method: 'GET', url: '/admin/status', headers: admin });
+    const resumed = await app.inject({
+      method: 'POST',
+      url: '/admin/resume',
+      headers: admin,
+      payload: { actor: 'codyalves' },
+    });
+
+    expect(before.json()).toMatchObject({ paused: true, dailyBudgetUsd: 3, spentTodayUsd: 0 });
+    expect(resumed.json()).toMatchObject({ paused: false, changedBy: 'codyalves' });
+    const events = await new AuditStore(t.db).readAll();
+    expect(events.map((e) => e.type)).toEqual(['factory.resumed']);
+    expect(await new AuditStore(t.db).verifyInDatabase()).toEqual([]);
   });
 });
