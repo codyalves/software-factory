@@ -118,6 +118,15 @@ pnpm verify                     # lint, type-check, unit tests
 FACTORY_TEST_DB=postgres://factory:factory@localhost:5432/factory pnpm test
 ```
 
+## When it spends API credit
+
+Only when you start it. Nothing is deployed, and nothing runs on a schedule.
+
+- **The factory** runs only while `docker compose up` (or `pnpm dev:*`) is
+  running. Workers without `ANTHROPIC_API_KEY` leave triage steps queued.
+- **CI** never calls the Claude API. Unit and integration tests use a fake model.
+- **The live triage check** runs only by hand: Actions → live-triage → Run workflow.
+
 ## Repository layout
 
 ```
