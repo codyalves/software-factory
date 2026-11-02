@@ -95,3 +95,7 @@ prompts/                   versioned prompts (CODEOWNERS-protected)
 deploy/                    Dockerfile and docker compose stack
 docs/                      design and architecture decision records
 ```
+
+## License
+
+[MIT](LICENSE)
