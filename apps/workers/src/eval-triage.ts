@@ -6,7 +6,7 @@
  *
  *   ANTHROPIC_API_KEY=... node apps/workers/src/eval-triage.ts [--out results.json]
  *
- * Env: TRIAGE_MODEL (claude-haiku-5-5), TRIAGE_PROMPT (triage.v2),
+ * Env: TRIAGE_MODEL (claude-haiku-5-5), TRIAGE_PROMPT (triage.v3),
  * CONFIDENCE_THRESHOLD (0.8), GOLDEN_SET (evals/triage/golden.json).
  */
 import { writeFile } from 'node:fs/promises';
@@ -26,7 +26,7 @@ if (!apiKey) {
 }
 
 const model = process.env.TRIAGE_MODEL || 'claude-haiku-5-5';
-const promptName = process.env.TRIAGE_PROMPT || 'triage.v2';
+const promptName = process.env.TRIAGE_PROMPT || 'triage.v3';
 const threshold = Number(process.env.CONFIDENCE_THRESHOLD || DEFAULT_CONFIDENCE_THRESHOLD);
 const cases = await loadGoldenSet(process.env.GOLDEN_SET || 'evals/triage/golden.json');
 

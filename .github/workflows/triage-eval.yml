@@ -12,7 +12,7 @@ on:
         required: true
       prompt:
         description: Prompt file in prompts/, without .md
-        default: triage.v2
+        default: triage.v3
         required: true
       threshold:
         description: Confidence threshold

@@ -19,7 +19,7 @@ const config = z
     TRIAGE_PROMPT: z
       .string()
       .regex(/^[\w.-]+$/)
-      .default('triage.v2'),
+      .default('triage.v3'),
   })
   .parse(process.env);
 
