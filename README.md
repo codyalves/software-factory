@@ -54,7 +54,7 @@ Why TypeScript: [ADR 0004](docs/adr/0004-typescript-stack.md).
 | Milestone | Scope | State |
 | --- | --- | --- |
 | M0 Skeleton | Schema, hash-chained audit log, signed webhook intake, run state machine, CI | Done |
-| **M1 Reliable core** | Queue, leases, retries, DLQ, outbox, gates, iteration loop, decision layer | **In progress**: step queue and triage done |
+| **M1 Reliable core** | Queue, leases, retries, DLQ, outbox, gates, iteration loop, decision layer | **In progress**: step queue, triage and outbox relay done |
 | M2 Visible | Dashboard, DLQ replay, traceability report, cloud deploy with LB and CDN | Planned |
 | M3 More intake | CI-failure and error-webhook intake, scheduled self-review | Planned |
 | M4 Reference mode | Behavior traces from a reference app become issues and replay gates | Planned |
@@ -94,6 +94,12 @@ maintains the platform; chatbot answer quality is gated by eval suites.
   moves to Planning, Rejected or Escalated. Every decision is an audit event
   with its probability, model and prompt hash, and an issue that needs
   clarification gets a comment queued in the outbox.
+- **Outbox relay.** Side effects are written to the outbox in the same
+  transaction as the state change that causes them, then posted to GitHub by
+  the factory's own [GitHub App](docs/github-app.md) (short-lived, repo-scoped
+  tokens). Delivery retries with backoff and honors GitHub's rate limits.
+  Each comment carries a hidden marker, so if GitHub accepted a comment but
+  the response was lost, the retry finds it instead of posting twice.
 
 ## Run it locally
 
@@ -126,6 +132,8 @@ Only when you start it. Nothing is deployed, and nothing runs on a schedule.
   running. Workers without `ANTHROPIC_API_KEY` leave triage steps queued.
 - **CI** never calls the Claude API. Unit and integration tests use a fake model.
 - **The live triage check** runs only by hand: Actions → live-triage → Run workflow.
+- **GitHub** is only written to while the orchestrator runs with a GitHub App
+  configured; otherwise comments wait in the outbox.
 
 ## Repository layout
 

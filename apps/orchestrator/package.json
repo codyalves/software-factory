@@ -6,6 +6,7 @@
   "dependencies": {
     "@factory/db": "workspace:*",
     "@factory/domain": "workspace:*",
+    "@factory/github": "workspace:*",
     "zod": "4.6.7"
   }
 }
