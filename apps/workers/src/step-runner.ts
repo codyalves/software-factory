@@ -1,6 +1,6 @@
 import { setTimeout as sleep } from 'node:timers/promises';
 import type { Step, StepFailure, StepQueue } from '@factory/db';
-import { classifyFailure, type FailureClass } from '@factory/domain';
+import { classifyFailure, type FailureClass, type ModelUsage } from '@factory/domain';
 
 /**
  * Thrown by a handler to state how its failure should be treated. Anything
@@ -36,10 +36,20 @@ export class StepError extends Error {
  * Does the work for one kind of step. Must stop promptly when the signal
  * aborts (timeout or lost lease); its result is discarded in that case.
  */
-export type StepHandler = (step: Step, context: { signal: AbortSignal }) => Promise<unknown>;
+export type StepHandler = (
+  step: Step,
+  context: {
+    signal: AbortSignal;
+    /** Report every billed model call; it lands in the cost ledger even if the step fails. */
+    recordUsage: (usage: ModelUsage) => void;
+  },
+) => Promise<unknown>;
+
+/** Whether the worker may take new work right now (pause switch, budget). */
+export type WorkGate = { readonly ok: true } | { readonly ok: false; readonly reason: string };
 
 export interface StepRunnerOptions {
-  readonly queue: Pick<StepQueue, 'claim' | 'heartbeat' | 'complete' | 'fail'>;
+  readonly queue: Pick<StepQueue, 'claim' | 'heartbeat' | 'complete' | 'fail' | 'recordUsage'>;
   readonly worker: string;
   readonly handlers: Readonly<Record<string, StepHandler>>;
   readonly leaseMs: number;
@@ -47,6 +57,8 @@ export interface StepRunnerOptions {
   /** Stops claiming new work. A step already running is allowed to finish. */
   readonly signal: AbortSignal;
   readonly log: Pick<Console, 'info' | 'warn' | 'error'>;
+  /** Checked before every claim. A blocked gate leaves work queued. */
+  readonly canClaim?: () => Promise<WorkGate>;
 }
 
 export async function runSteps(options: StepRunnerOptions): Promise<void> {
@@ -55,7 +67,29 @@ export async function runSteps(options: StepRunnerOptions): Promise<void> {
     options.log.warn('no step handlers registered; nothing to do');
   }
 
+  let blockedBy: string | null = null;
+
   while (!options.signal.aborted) {
+    const gate: WorkGate = options.canClaim
+      ? await options.canClaim().catch((error: unknown) => ({
+          ok: false as const,
+          reason: `could not check the pause switch and budget: ${String(error)}`,
+        }))
+      : { ok: true };
+
+    if (!gate.ok) {
+      if (blockedBy !== gate.reason) {
+        options.log.info(`not taking new work: ${gate.reason}`);
+        blockedBy = gate.reason;
+      }
+      await sleep(options.idleDelayMs, undefined, { signal: options.signal }).catch(() => {});
+      continue;
+    }
+    if (blockedBy !== null) {
+      options.log.info('taking new work again');
+      blockedBy = null;
+    }
+
     let step: Step | null = null;
     try {
       step = await options.queue.claim(options.worker, kinds, options.leaseMs);
@@ -79,6 +113,10 @@ export async function executeStep(step: Step, options: StepRunnerOptions): Promi
   const leaseLost = new AbortController();
   const timeout = AbortSignal.timeout(step.timeoutMs);
   const signal = AbortSignal.any([leaseLost.signal, timeout]);
+  const usage: ModelUsage[] = [];
+  const recordUsage = (entry: ModelUsage) => {
+    usage.push(entry);
+  };
 
   // Heartbeat at a third of the lease, so two can be missed before it expires.
   const heartbeat = setInterval(() => {
@@ -95,7 +133,7 @@ export async function executeStep(step: Step, options: StepRunnerOptions): Promi
       throw new StepError(`no handler for step kind ${step.kind}`, { failureClass: 'permanent' });
     }
     // Race the abort, so a handler that ignores its signal cannot hold the worker past the deadline.
-    const result = await Promise.race([handler(step, { signal }), rejectOnAbort(signal)]);
+    const result = await Promise.race([handler(step, { signal, recordUsage }), rejectOnAbort(signal)]);
     if (leaseLost.signal.aborted) {
       log.warn(`step ${step.id} finished after its lease was lost; result discarded`);
       return;
@@ -117,6 +155,12 @@ export async function executeStep(step: Step, options: StepRunnerOptions): Promi
     );
   } finally {
     clearInterval(heartbeat);
+    // Spend is recorded whatever happened to the step: the tokens were billed.
+    if (usage.length > 0) {
+      await queue.recordUsage(step, usage).catch((error: unknown) => {
+        log.error(`could not record usage for step ${step.id}`, error);
+      });
+    }
   }
 }
 

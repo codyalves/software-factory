@@ -1,4 +1,4 @@
-import { AuditStore, createDb, migrate, RunStore, StepQueue } from '@factory/db';
+import { AuditStore, createDb, FactoryControl, migrate, RunStore, StepQueue } from '@factory/db';
 import { buildApp } from './app.ts';
 import { loadConfig } from './config.ts';
 
@@ -10,6 +10,7 @@ const app = buildApp(
     runs: new RunStore(db),
     audit: new AuditStore(db),
     steps: new StepQueue(db),
+    control: new FactoryControl(db),
     webhookSecret: config.GITHUB_WEBHOOK_SECRET,
     adminToken: config.ADMIN_TOKEN,
   },

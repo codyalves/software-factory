@@ -1,5 +1,5 @@
 import { readFileSync } from 'node:fs';
-import { createDb, OutboxRelay, RunStore, StepQueue } from '@factory/db';
+import { createDb, FactoryControl, OutboxRelay, RunStore, StepQueue } from '@factory/db';
 import { DEFAULT_CONFIDENCE_THRESHOLD } from '@factory/domain';
 import { GitHubAppAuth, GitHubForge, parsePrivateKey } from '@factory/github';
 import { z } from 'zod';
@@ -26,6 +26,7 @@ const config = z
 const { db, close } = createDb(config.DATABASE_URL);
 const runs = new RunStore(db);
 const queue = new StepQueue(db);
+const control = new FactoryControl(db);
 const controller = new AbortController();
 const loop = { idleDelayMs: config.IDLE_DELAY_MS, signal: controller.signal, log: console };
 
@@ -55,7 +56,7 @@ await Promise.all([
   forge
     ? runDrainLoop({
         name: 'outbox relay',
-        next: () => deliverNextOutbox(new OutboxRelay(db), forge),
+        next: () => deliverNextOutbox(new OutboxRelay(db), forge, () => control.allowsSending()),
         ...loop,
       })
     : Promise.resolve(),

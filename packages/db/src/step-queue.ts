@@ -2,6 +2,7 @@ import {
   DEFAULT_RETRY_POLICY,
   decideRetry,
   type FailureClass,
+  type ModelUsage,
   type RetryDecision,
   type RetryPolicy,
 } from '@factory/domain';
@@ -169,6 +170,30 @@ export class StepQueue {
 
   enqueue(input: EnqueueInput): Promise<{ stepId: string; created: boolean }> {
     return this.#db.transaction().execute((trx) => enqueueStep(trx, input));
+  }
+
+  /**
+   * Writes billed model usage to the cost ledger. Called for every attempt
+   * that spent tokens, including ones that failed, so the daily budget sees
+   * the real spend.
+   */
+  async recordUsage(step: Pick<Step, 'id' | 'runId'>, usage: readonly ModelUsage[]): Promise<void> {
+    if (usage.length === 0) {
+      return;
+    }
+    await this.#db
+      .insertInto('cost_ledger')
+      .values(
+        usage.map((u) => ({
+          run_id: step.runId,
+          step_id: step.id,
+          model: u.model,
+          tokens_in: u.inputTokens,
+          tokens_out: u.outputTokens,
+          usd: u.usd.toFixed(6),
+        })),
+      )
+      .execute();
   }
 
   /**
