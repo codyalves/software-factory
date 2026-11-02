@@ -7,5 +7,6 @@
 /db/migrations/                               @codyalves
 /.github/                                     @codyalves
 /biome.json                                   @codyalves
+/CLAUDE.md                                    @codyalves
 /packages/domain/src/audit-chain.ts           @codyalves
 /packages/domain/src/run-state-machine.ts     @codyalves
