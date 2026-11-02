@@ -16,6 +16,10 @@ const config = z
     ANTHROPIC_API_KEY: z.preprocess((v) => (v === '' ? undefined : v), z.string().optional()),
     TRIAGE_MODEL: z.string().default('claude-haiku-5-5'),
     PROMPTS_DIR: z.string().default('prompts'),
+    TRIAGE_PROMPT: z
+      .string()
+      .regex(/^[\w.-]+$/)
+      .default('triage.v2'),
   })
   .parse(process.env);
 
@@ -32,7 +36,7 @@ const decisionModel = config.ANTHROPIC_API_KEY
       // The step queue owns retries (with backoff and an audit trail), so the SDK does not retry.
       client: new Anthropic({ apiKey: config.ANTHROPIC_API_KEY, maxRetries: 0 }),
       model: config.TRIAGE_MODEL,
-      prompt: await loadPrompt(config.PROMPTS_DIR, 'triage.v1'),
+      prompt: await loadPrompt(config.PROMPTS_DIR, config.TRIAGE_PROMPT),
     })
   : null;
 

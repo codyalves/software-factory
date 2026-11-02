@@ -1,0 +1,64 @@
+name: triage-eval
+
+# Scores triage against the hand-labeled golden set with the real Claude API
+# (about two cents per run with Haiku). Runs only when started by hand:
+# Actions tab -> triage-eval -> Run workflow. Never runs on push or PR.
+on:
+  workflow_dispatch:
+    inputs:
+      model:
+        description: Model to triage with
+        default: claude-haiku-5-5
+        required: true
+      prompt:
+        description: Prompt file in prompts/, without .md
+        default: triage.v2
+        required: true
+      threshold:
+        description: Confidence threshold
+        default: '0.8'
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  triage-eval:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+      TRIAGE_MODEL: ${{ inputs.model }}
+      TRIAGE_PROMPT: ${{ inputs.prompt }}
+      CONFIDENCE_THRESHOLD: ${{ inputs.threshold }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: pnpm/action-setup@v6
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 26
+          cache: pnpm
+
+      - name: Install
+        run: pnpm install --frozen-lockfile
+
+      - name: Require the API key
+        if: env.ANTHROPIC_API_KEY == ''
+        run: |
+          echo "ANTHROPIC_API_KEY secret is not set." | tee -a "$GITHUB_STEP_SUMMARY"
+          exit 1
+
+      - name: Score triage against the golden set
+        run: |
+          set -o pipefail
+          node apps/workers/src/eval-triage.ts --out triage-eval.json | tee -a "$GITHUB_STEP_SUMMARY"
+
+      - name: Keep the per-case results
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: triage-eval-${{ github.run_number }}
+          path: triage-eval.json
+          if-no-files-found: ignore

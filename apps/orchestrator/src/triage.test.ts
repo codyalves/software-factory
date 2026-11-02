@@ -1,13 +1,34 @@
 import { AuditStore, RunStore, StepQueue } from '@factory/db';
 import { createTestDatabase, TEST_DATABASE_URL, type TestDatabase } from '@factory/db/testing';
-import type { Decision } from '@factory/domain';
+import { type Decision, RISK_QUESTIONS } from '@factory/domain';
 import { describe, expect, it } from 'vitest';
 import { applyNextTriageResult, startNextTriage, TRIAGE_STEP } from './triage.ts';
 
 const THRESHOLD = 0.8;
 
 function decision(question: string, choice: string, probability: number): Decision {
-  return { question, choice, probability, engine: 'test', engineVersion: '1', promptVersion: 'triage.v1@x' };
+  return {
+    question,
+    choice,
+    probability,
+    engine: 'test',
+    engineVersion: '1',
+    promptVersion: 'triage.v1@x',
+    questionVersion: null,
+  };
+}
+
+/** A full set of triage answers: a clear, low-risk feature unless overridden. */
+function answers(overrides: Record<string, readonly [string, number]> = {}): Decision[] {
+  const base: Record<string, readonly [string, number]> = {
+    issue_type: ['feature', 0.95],
+    spec_ready: ['yes', 0.9],
+    ...Object.fromEntries(Object.values(RISK_QUESTIONS).map((q) => [q.name, ['no', 0.95] as const])),
+    ...overrides,
+  };
+  return Object.entries(base).map(([question, [choice, probability]]) =>
+    decision(question, choice, probability),
+  );
 }
 
 /** Webhook intake, then the orchestrator queues triage. */
@@ -47,11 +68,7 @@ describe.skipIf(!TEST_DATABASE_URL)('triage through the orchestrator', () => {
   it('plans a clear issue, records each decision, and sets the risk tier', async () => {
     await using t = await createTestDatabase();
     const { runs, queue, runId } = await runAwaitingTriage(t);
-    await workerAnswers(queue, [
-      decision('issue_type', 'feature', 0.95),
-      decision('spec_ready', 'yes', 0.9),
-      decision('risk_tier', 'low', 0.88),
-    ]);
+    await workerAnswers(queue, answers());
 
     expect(await applyNextTriageResult(runs, THRESHOLD)).toBe(`run ${runId} triaged: Planning`);
     expect(await applyNextTriageResult(runs, THRESHOLD)).toBeNull();
@@ -62,11 +79,9 @@ describe.skipIf(!TEST_DATABASE_URL)('triage through the orchestrator', () => {
     expect(await outbox(t)).toEqual([]);
 
     const events = await new AuditStore(t.db).readAll();
-    expect(events.map((e) => e.type).slice(-6)).toEqual([
+    expect(events.map((e) => e.type).slice(-10)).toEqual([
       'step.succeeded',
-      'decision.made',
-      'decision.made',
-      'decision.made',
+      ...Array(7).fill('decision.made'),
       'triage.completed',
       'run.state_changed',
     ]);
@@ -83,11 +98,7 @@ describe.skipIf(!TEST_DATABASE_URL)('triage through the orchestrator', () => {
   it('escalates an issue without testable criteria and asks the author for them', async () => {
     await using t = await createTestDatabase();
     const { runs, queue, runId } = await runAwaitingTriage(t);
-    await workerAnswers(queue, [
-      decision('issue_type', 'feature', 0.9),
-      decision('spec_ready', 'no', 0.92),
-      decision('risk_tier', 'medium', 0.9),
-    ]);
+    await workerAnswers(queue, answers({ spec_ready: ['no', 0.92] }));
 
     await applyNextTriageResult(runs, THRESHOLD);
 
@@ -103,14 +114,13 @@ describe.skipIf(!TEST_DATABASE_URL)('triage through the orchestrator', () => {
     });
   });
 
-  it('records the fallback when the model is unsure about risk', async () => {
+  it('records the risk factors and the fallback when the model is unsure', async () => {
     await using t = await createTestDatabase();
     const { runs, queue } = await runAwaitingTriage(t);
-    await workerAnswers(queue, [
-      decision('issue_type', 'bug', 0.9),
-      decision('spec_ready', 'yes', 0.9),
-      decision('risk_tier', 'low', 0.55),
-    ]);
+    await workerAnswers(
+      queue,
+      answers({ issue_type: ['bug', 0.9], risk_existing_behavior: ['yes', 0.9], risk_data: ['no', 0.55] }),
+    );
 
     await applyNextTriageResult(runs, THRESHOLD);
 
@@ -118,8 +128,11 @@ describe.skipIf(!TEST_DATABASE_URL)('triage through the orchestrator', () => {
     expect(JSON.parse(completed?.payload ?? '{}')).toMatchObject({
       next: 'Planning',
       riskTier: 'high',
-      fallbacks: ['risk_tier low below confidence threshold; treated as high'],
+      riskFactors: ['risk_data', 'risk_existing_behavior'],
+      fallbacks: ['risk_data no below confidence threshold; treated as yes'],
     });
+    const risk = await t.pool.query('select risk_level from requirement');
+    expect(risk.rows).toEqual([{ risk_level: 'high' }]);
   });
 
   it('escalates the run when the triage step dead-letters', async () => {

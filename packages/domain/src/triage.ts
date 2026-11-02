@@ -1,32 +1,76 @@
 import type { Decision, DecisionQuestion } from './decisions.ts';
 
 export const ISSUE_TYPES = ['bug', 'feature', 'chore', 'reject'] as const;
-export const SPEC_READY = ['yes', 'no'] as const;
+export const YES_NO = ['yes', 'no'] as const;
 export const RISK_TIERS = ['low', 'medium', 'high'] as const;
 
 export type IssueType = (typeof ISSUE_TYPES)[number];
 export type RiskTier = (typeof RISK_TIERS)[number];
 
-export const TRIAGE_QUESTIONS = {
-  issueType: {
-    name: 'issue_type',
+/**
+ * Risk is not asked as one judgment call. Each question asks whether the work
+ * touches one specific thing; code combines the answers into a tier. Small
+ * yes/no questions are easier to answer well, and every tier can be traced to
+ * the facts that produced it.
+ */
+export const RISK_QUESTIONS = {
+  auth: {
+    name: 'risk_auth',
+    tier: 'high',
     instructions:
-      'What kind of work is this issue? "reject" if it is not actionable, not software work, or asks for something unsafe.',
-    options: ISSUE_TYPES,
+      'Would doing this work change authentication, authorization, sessions, secrets, API keys or who can access what? Answer "yes" if the issue would plausibly require it, even if it does not say so.',
+    options: YES_NO,
   },
-  specReady: {
-    name: 'spec_ready',
+  data: {
+    name: 'risk_data',
+    tier: 'high',
     instructions:
-      'Can this be implemented and verified as written? "yes" only if every acceptance criterion is specific and testable.',
-    options: SPEC_READY,
+      'Would doing this work change the database schema, migrate, rewrite or delete stored data, or change how personal data is collected, stored or shared? Answer "yes" if the issue would plausibly require it, even if it does not say so.',
+    options: YES_NO,
   },
-  riskTier: {
-    name: 'risk_tier',
+  payments: {
+    name: 'risk_payments',
+    tier: 'high',
     instructions:
-      '"high" if it touches authentication, payments, data migrations, dependencies, CI configuration or quality gates. "medium" if it changes behavior users depend on. "low" for copy, styling, tests or isolated additions.',
-    options: RISK_TIERS,
+      'Would doing this work touch payments, billing, pricing or invoices? Answer "yes" if the issue would plausibly require it, even if it does not say so.',
+    options: YES_NO,
   },
-} as const satisfies Record<string, DecisionQuestion>;
+  platform: {
+    name: 'risk_platform',
+    tier: 'high',
+    instructions:
+      'Would doing this work add, remove or upgrade a dependency, or change the build, CI, deployment, infrastructure, quality gates or the software factory itself? Answer "yes" if the issue would plausibly require it, even if it does not say so.',
+    options: YES_NO,
+  },
+  existingBehavior: {
+    name: 'risk_existing_behavior',
+    tier: 'medium',
+    instructions:
+      'Would doing this work change or remove behavior that users or other code already rely on, including what an AI chatbot answers? Answer "no" if it only adds something new, or only changes copy, styling or tests.',
+    options: YES_NO,
+  },
+} as const satisfies Record<string, DecisionQuestion & { tier: Exclude<RiskTier, 'low'> }>;
+
+export const ISSUE_TYPE_QUESTION = {
+  name: 'issue_type',
+  instructions:
+    'What kind of work is this issue? "reject" if it is not actionable, not software work, or asks for something unsafe.',
+  options: ISSUE_TYPES,
+} as const satisfies DecisionQuestion;
+
+export const SPEC_READY_QUESTION = {
+  name: 'spec_ready',
+  instructions:
+    'Can this be implemented and verified as written? "yes" only if every acceptance criterion is specific and testable.',
+  options: YES_NO,
+} as const satisfies DecisionQuestion;
+
+/** Every question triage asks, in a stable order: type, spec, then each risk factor. */
+export const TRIAGE_QUESTIONS: readonly DecisionQuestion[] = [
+  ISSUE_TYPE_QUESTION,
+  SPEC_READY_QUESTION,
+  ...Object.values(RISK_QUESTIONS),
+];
 
 export type TriageNext = 'Planning' | 'Rejected' | 'Escalated';
 
@@ -34,6 +78,8 @@ export interface TriageOutcome {
   readonly next: TriageNext;
   /** Risk after fallbacks; drives the merge policy later. */
   readonly riskTier: RiskTier;
+  /** The risk questions answered (or treated as) "yes", which set the tier. */
+  readonly riskFactors: readonly string[];
   readonly reason: string;
   /** Safe defaults taken because a decision was below the confidence threshold. */
   readonly fallbacks: readonly string[];
@@ -46,10 +92,11 @@ export interface TriageOutcome {
  * deterministic: models answer the questions, this code decides.
  *
  * Low-confidence fallbacks: an unsure issue type escalates to a human, an
- * unsure spec counts as not ready, an unsure risk tier counts as high.
+ * unsure spec counts as not ready, and an unsure "no" to a risk question
+ * counts as "yes". The tier is the highest tier among the "yes" answers.
  */
 export function triageOutcome(decisions: readonly Decision[], threshold: number): TriageOutcome {
-  const find = (question: DecisionQuestion) => {
+  const find = (question: DecisionQuestion): { choice: string; confident: boolean } => {
     const decision = decisions.find((d) => d.question === question.name);
     if (!decision || !(question.options as readonly string[]).includes(decision.choice)) {
       throw new Error(`triage is missing a valid answer to ${question.name}`);
@@ -57,21 +104,30 @@ export function triageOutcome(decisions: readonly Decision[], threshold: number)
     return { choice: decision.choice, confident: decision.probability >= threshold };
   };
 
-  const issueType = find(TRIAGE_QUESTIONS.issueType);
-  const specReady = find(TRIAGE_QUESTIONS.specReady);
-  const risk = find(TRIAGE_QUESTIONS.riskTier);
+  const issueType = find(ISSUE_TYPE_QUESTION);
+  const specReady = find(SPEC_READY_QUESTION);
 
   const fallbacks: string[] = [];
-  let riskTier = risk.choice as RiskTier;
-  if (!risk.confident && riskTier !== 'high') {
-    fallbacks.push(`risk_tier ${riskTier} below confidence threshold; treated as high`);
-    riskTier = 'high';
+  const riskFactors: string[] = [];
+  let riskTier: RiskTier = 'low';
+  for (const question of Object.values(RISK_QUESTIONS)) {
+    const answer = find(question);
+    if (answer.choice === 'no' && !answer.confident) {
+      fallbacks.push(`${question.name} no below confidence threshold; treated as yes`);
+    } else if (answer.choice === 'no') {
+      continue;
+    }
+    riskFactors.push(question.name);
+    if (question.tier === 'high' || riskTier === 'low') {
+      riskTier = question.tier;
+    }
   }
 
   if (issueType.choice === 'reject' && issueType.confident) {
     return {
       next: 'Rejected',
       riskTier,
+      riskFactors,
       reason: 'triage rejected the issue as not actionable',
       fallbacks,
       comment:
@@ -84,6 +140,7 @@ export function triageOutcome(decisions: readonly Decision[], threshold: number)
     return {
       next: 'Escalated',
       riskTier,
+      riskFactors,
       reason: 'issue type unclear',
       fallbacks,
       comment:
@@ -98,6 +155,7 @@ export function triageOutcome(decisions: readonly Decision[], threshold: number)
     return {
       next: 'Escalated',
       riskTier,
+      riskFactors,
       reason: 'acceptance criteria are not specific and testable',
       fallbacks,
       comment:
@@ -108,7 +166,8 @@ export function triageOutcome(decisions: readonly Decision[], threshold: number)
   return {
     next: 'Planning',
     riskTier,
-    reason: `triaged as ${issueType.choice}, ${riskTier} risk`,
+    riskFactors,
+    reason: `triaged as ${issueType.choice}, ${riskTier} risk${riskFactors.length > 0 ? ` (${riskFactors.join(', ')})` : ''}`,
     fallbacks,
     comment: null,
   };

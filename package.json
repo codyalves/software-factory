@@ -14,7 +14,8 @@
     "test:watch": "vitest",
     "verify": "pnpm check && pnpm typecheck && pnpm test",
     "dev:api": "node --watch apps/api/src/server.ts",
-    "dev:orchestrator": "node --watch apps/orchestrator/src/main.ts"
+    "dev:orchestrator": "node --watch apps/orchestrator/src/main.ts",
+    "eval:triage": "node apps/workers/src/eval-triage.ts"
   },
   "devDependencies": {
     "@biomejs/biome": "2.6.4",

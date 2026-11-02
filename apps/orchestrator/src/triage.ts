@@ -13,6 +13,8 @@ const triageResult = z.object({
       engine: z.string(),
       engineVersion: z.string(),
       promptVersion: z.string().nullable(),
+      // Absent on results written before questions were versioned.
+      questionVersion: z.string().nullable().default(null),
     }),
   ),
 });
@@ -68,6 +70,7 @@ export async function applyNextTriageResult(
       stepId: step.id,
       next: outcome.next,
       riskTier: outcome.riskTier,
+      riskFactors: outcome.riskFactors,
       reason: outcome.reason,
       fallbacks: outcome.fallbacks,
     });

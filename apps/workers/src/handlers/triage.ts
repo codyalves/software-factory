@@ -16,7 +16,7 @@ export interface TriageDependencies {
 }
 
 /**
- * Asks the decision layer the three triage questions about the run's issue.
+ * Asks the decision layer every triage question about the run's issue.
  * It only answers; the orchestrator records the decisions and moves the run.
  */
 export function createTriageHandler(deps: TriageDependencies): StepHandler {
@@ -35,7 +35,7 @@ export function createTriageHandler(deps: TriageDependencies): StepHandler {
 
     try {
       const decisions = await Promise.all(
-        Object.values(TRIAGE_QUESTIONS).map((question) =>
+        TRIAGE_QUESTIONS.map((question) =>
           deps.model.decide(question, material, { signal, onUsage: recordUsage }),
         ),
       );

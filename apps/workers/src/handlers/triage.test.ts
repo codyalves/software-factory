@@ -1,6 +1,6 @@
 import type { Step } from '@factory/db';
 import { DecisionError } from '@factory/decisions';
-import type { Decision, DecisionModel, DecisionQuestion } from '@factory/domain';
+import { type Decision, type DecisionModel, type DecisionQuestion, TRIAGE_QUESTIONS } from '@factory/domain';
 import { describe, expect, it, vi } from 'vitest';
 import { StepError } from '../step-runner.ts';
 import { createTriageHandler } from './triage.ts';
@@ -34,7 +34,7 @@ const signal = new AbortController().signal;
 const context = () => ({ signal, recordUsage: vi.fn() });
 
 describe('triage handler', () => {
-  it('asks all three questions about the issue and returns the decisions', async () => {
+  it('asks every triage question about the issue and returns the decisions', async () => {
     const materials: string[] = [];
     // A plain generic function: vitest mocks would erase decide's type parameter.
     async function decide<Option extends string>(
@@ -51,17 +51,16 @@ describe('triage handler', () => {
         engine: 'fake',
         engineVersion: '1',
         promptVersion: null,
+        questionVersion: null,
       };
     }
     const handler = createTriageHandler({ model: model(decide), loadIssue: async () => issue });
 
     const result = await handler(step, context());
 
-    expect(result).toMatchObject({
-      decisions: [{ question: 'issue_type' }, { question: 'spec_ready' }, { question: 'risk_tier' }],
-    });
+    expect(result).toMatchObject({ decisions: TRIAGE_QUESTIONS.map((q) => ({ question: q.name })) });
     // The issue text reaches the model as material, never as the prompt.
-    expect(materials).toHaveLength(3);
+    expect(materials).toHaveLength(TRIAGE_QUESTIONS.length);
     expect(materials[0]).toContain('Issue #42: Add a contact page');
   });
 
@@ -82,6 +81,7 @@ describe('triage handler', () => {
         engine: 'fake',
         engineVersion: '1',
         promptVersion: null,
+        questionVersion: null,
       });
     }
     const handler = createTriageHandler({ model: model(decide), loadIssue: async () => issue });
@@ -89,7 +89,7 @@ describe('triage handler', () => {
 
     await handler(step, ctx);
 
-    expect(ctx.recordUsage).toHaveBeenCalledTimes(3);
+    expect(ctx.recordUsage).toHaveBeenCalledTimes(TRIAGE_QUESTIONS.length);
     expect(ctx.recordUsage).toHaveBeenCalledWith(usage);
   });
 

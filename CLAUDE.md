@@ -73,7 +73,9 @@ imports include the `.ts` extension. Use `import type` for types.
 
 Changes to these need the owner's review: `gates/`, `prompts/`,
 `db/migrations/`, `.github/`, `biome.json`, `CLAUDE.md`,
-`packages/domain/src/audit-chain.ts`, `packages/domain/src/run-state-machine.ts`.
+`packages/domain/src/audit-chain.ts`, `packages/domain/src/run-state-machine.ts`,
+`packages/domain/src/triage.ts`, `evals/`, and the spending controls
+(`packages/db/src/factory-control.ts`, `packages/decisions/src/pricing.ts`).
 Prompts are versioned by file name and content hash; a meaningfully different
 prompt gets a new file (`triage.v2.md`), not an edit.
 
@@ -84,7 +86,9 @@ prompt gets a new file (`triage.v2.md`), not an edit.
   `createTestDatabase()` from `@factory/db/testing` (`await using t = ...`).
 - External services are faked at the HTTP boundary: `fakeGitHub` from
   `@factory/github/testing`, or a fake `MessagesClient` for Claude. CI never
-  calls the real Claude API; `live-triage` is a manual workflow.
+  calls the real Claude API; `triage-eval` is a manual workflow.
+- Changing a triage question, rule or prompt: keep `evals/triage/golden.json`
+  consistent (a test enforces it) and ask the owner to run `triage-eval`.
 - Test names describe behavior ("rejects a modified body"), not functions.
 
 ## Workflow

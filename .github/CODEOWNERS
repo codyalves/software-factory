@@ -13,3 +13,6 @@
 # Spending controls: the pause switch, the daily budget and the prices it uses.
 /packages/db/src/factory-control.ts           @codyalves
 /packages/decisions/src/pricing.ts            @codyalves
+# Triage rules and the labeled set they are scored against.
+/packages/domain/src/triage.ts                @codyalves
+/evals/                                       @codyalves
