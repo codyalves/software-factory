@@ -1,12 +1,15 @@
-import type { AuditStore, IntakeResult, RunStore } from '@factory/db';
+import type { AuditStore, IntakeResult, RunStore, StepQueue } from '@factory/db';
 import { isSignatureValid, parseIssueEvent } from '@factory/github';
 import Fastify, { type FastifyInstance, type FastifyServerOptions } from 'fastify';
 import { z } from 'zod';
+import { adminRoutes } from './admin.ts';
 
 export interface AppDependencies {
   readonly runs: Pick<RunStore, 'createFromIssue' | 'get'>;
   readonly audit: Pick<AuditStore, 'verify' | 'verifyInDatabase'>;
+  readonly steps: Pick<StepQueue, 'listDeadLetters' | 'replay'>;
   readonly webhookSecret: string;
+  readonly adminToken?: string | undefined;
 }
 
 /** GitHub caps webhook payloads at 25 MB. */
@@ -52,6 +55,8 @@ export function buildApp(deps: AppDependencies, options: FastifyServerOptions = 
       return { outcome: result.outcome };
     });
   });
+
+  app.register(adminRoutes, { prefix: '/admin', steps: deps.steps, adminToken: deps.adminToken });
 
   app.get('/runs/:id', async (request, reply) => {
     const params = runParams.safeParse(request.params);

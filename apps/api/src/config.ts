@@ -3,6 +3,9 @@ import { z } from 'zod';
 const schema = z.object({
   DATABASE_URL: z.url(),
   GITHUB_WEBHOOK_SECRET: z.string().min(1),
+  /** Enables /admin routes. Long and random: it can replay work. */
+  // Empty counts as unset: compose passes `${ADMIN_TOKEN:-}` through as "".
+  ADMIN_TOKEN: z.preprocess((v) => (v === '' ? undefined : v), z.string().min(32).optional()),
   PORT: z.coerce.number().int().positive().default(8080),
   HOST: z.string().default('0.0.0.0'),
   MIGRATE_ON_STARTUP: z.stringbool().default(false),

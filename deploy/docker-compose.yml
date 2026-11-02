@@ -39,6 +39,7 @@ services:
       DATABASE_URL: *database-url
       MIGRATE_ON_STARTUP: "true"
       GITHUB_WEBHOOK_SECRET: ${GITHUB_WEBHOOK_SECRET:?set GITHUB_WEBHOOK_SECRET in .env}
+      ADMIN_TOKEN: ${ADMIN_TOKEN:-}
     ports: ["8080:8080"]
     depends_on:
       postgres: { condition: service_healthy }
@@ -53,6 +54,8 @@ services:
 
   workers:
     build: { context: .., dockerfile: deploy/Dockerfile, args: { ENTRY: apps/workers/src/main.ts } }
+    environment:
+      DATABASE_URL: *database-url
     depends_on:
       postgres: { condition: service_healthy }
 

@@ -1,10 +1,13 @@
 import { createHmac } from 'node:crypto';
-import { AuditStore, RunStore } from '@factory/db';
+import { AuditStore, RunStore, StepQueue } from '@factory/db';
 import { createTestDatabase, TEST_DATABASE_URL } from '@factory/db/testing';
 import { describe, expect, it, vi } from 'vitest';
 import { type AppDependencies, buildApp } from './app.ts';
 
 const SECRET = 'test-secret';
+const ADMIN_TOKEN = 'a'.repeat(40);
+const admin = { authorization: `Bearer ${ADMIN_TOKEN}` };
+const STEP_ID = '0b8c2a8e-3f7b-4c55-9a43-1d2e3f4a5b6c';
 
 function signedWebhook(payload: unknown, deliveryId = 'delivery-1', event = 'issues') {
   const body = JSON.stringify(payload);
@@ -43,6 +46,11 @@ function fakeDeps(): AppDependencies {
       verify: vi.fn().mockResolvedValue({ valid: true, eventCount: 0, headHash: '0'.repeat(64) }),
       verifyInDatabase: vi.fn().mockResolvedValue([]),
     },
+    steps: {
+      listDeadLetters: vi.fn().mockResolvedValue([]),
+      replay: vi.fn().mockResolvedValue(true),
+    },
+    adminToken: ADMIN_TOKEN,
   };
 }
 
@@ -78,10 +86,66 @@ describe('API', () => {
   });
 });
 
+describe('admin routes', () => {
+  it('require the admin token', async () => {
+    const app = buildApp(fakeDeps());
+
+    const missing = await app.inject({ method: 'GET', url: '/admin/dead-letters' });
+    const wrong = await app.inject({
+      method: 'GET',
+      url: '/admin/dead-letters',
+      headers: { authorization: `Bearer ${'b'.repeat(40)}` },
+    });
+    const right = await app.inject({ method: 'GET', url: '/admin/dead-letters', headers: admin });
+
+    expect([missing.statusCode, wrong.statusCode, right.statusCode]).toEqual([401, 401, 200]);
+  });
+
+  it('are disabled when no admin token is configured', async () => {
+    const response = await buildApp({ ...fakeDeps(), adminToken: undefined }).inject({
+      method: 'GET',
+      url: '/admin/dead-letters',
+      headers: admin,
+    });
+
+    expect(response.statusCode).toBe(503);
+  });
+
+  it('replay a dead-lettered step on behalf of the named actor', async () => {
+    const deps = fakeDeps();
+
+    const response = await buildApp(deps).inject({
+      method: 'POST',
+      url: `/admin/steps/${STEP_ID}/replay`,
+      headers: admin,
+      payload: { actor: 'codyalves' },
+    });
+
+    expect(response.statusCode).toBe(202);
+    expect(deps.steps.replay).toHaveBeenCalledWith(STEP_ID, 'codyalves');
+  });
+
+  it('refuse a replay without an actor', async () => {
+    const response = await buildApp(fakeDeps()).inject({
+      method: 'POST',
+      url: `/admin/steps/${STEP_ID}/replay`,
+      headers: admin,
+      payload: {},
+    });
+
+    expect(response.statusCode).toBe(400);
+  });
+});
+
 describe.skipIf(!TEST_DATABASE_URL)('API with Postgres', () => {
   it('turns a signed issue webhook into a run with a valid audit chain', async () => {
     await using t = await createTestDatabase();
-    const app = buildApp({ runs: new RunStore(t.db), audit: new AuditStore(t.db), webhookSecret: SECRET });
+    const app = buildApp({
+      runs: new RunStore(t.db),
+      audit: new AuditStore(t.db),
+      steps: new StepQueue(t.db),
+      webhookSecret: SECRET,
+    });
 
     const created = await app.inject(signedWebhook(openedIssue));
     const redelivered = await app.inject(signedWebhook(openedIssue));
@@ -94,5 +158,45 @@ describe.skipIf(!TEST_DATABASE_URL)('API with Postgres', () => {
 
     const verify = await app.inject({ method: 'GET', url: '/audit/verify' });
     expect(verify.json()).toMatchObject({ valid: true, events: 2, database: [] });
+  });
+
+  it('lists a dead letter and replays it through the admin API', async () => {
+    await using t = await createTestDatabase();
+    const steps = new StepQueue(t.db, { policy: { maxAttempts: 1, baseDelayMs: 0, maxDelayMs: 0 } });
+    const app = buildApp({
+      runs: new RunStore(t.db),
+      audit: new AuditStore(t.db),
+      steps,
+      webhookSecret: SECRET,
+      adminToken: ADMIN_TOKEN,
+    });
+    const created = await app.inject(signedWebhook(openedIssue));
+    const { stepId } = await steps.enqueue({
+      runId: created.json().runId,
+      kind: 'triage',
+      idempotencyKey: 'triage',
+    });
+    await steps.claim('w', ['triage'], 30_000);
+    await steps.fail(stepId, 'w', { failureClass: 'permanent', message: 'bad prompt version' });
+
+    const list = await app.inject({ method: 'GET', url: '/admin/dead-letters', headers: admin });
+    expect(list.json().deadLetters).toMatchObject([
+      { step: { id: stepId }, lastError: 'bad prompt version' },
+    ]);
+
+    const replay = await app.inject({
+      method: 'POST',
+      url: `/admin/steps/${stepId}/replay`,
+      headers: admin,
+      payload: { actor: 'codyalves' },
+    });
+    const again = await app.inject({
+      method: 'POST',
+      url: `/admin/steps/${stepId}/replay`,
+      headers: admin,
+      payload: { actor: 'codyalves' },
+    });
+
+    expect([replay.statusCode, again.statusCode]).toEqual([202, 409]);
   });
 });

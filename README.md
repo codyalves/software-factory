@@ -53,8 +53,8 @@ Why TypeScript: [ADR 0004](docs/adr/0004-typescript-stack.md).
 
 | Milestone | Scope | State |
 | --- | --- | --- |
-| **M0 Skeleton** | Schema, hash-chained audit log, signed webhook intake, run state machine, CI | **In progress** |
-| M1 Reliable core | Queue, leases, retries, DLQ, outbox, gates, iteration loop, decision layer | Planned |
+| M0 Skeleton | Schema, hash-chained audit log, signed webhook intake, run state machine, CI | Done |
+| **M1 Reliable core** | Queue, leases, retries, DLQ, outbox, gates, iteration loop, decision layer | **In progress**: step queue done |
 | M2 Visible | Dashboard, DLQ replay, traceability report, cloud deploy with LB and CDN | Planned |
 | M3 More intake | CI-failure and error-webhook intake, scheduled self-review | Planned |
 | M4 Reference mode | Behavior traces from a reference app become issues and replay gates | Planned |
@@ -64,7 +64,7 @@ Why TypeScript: [ADR 0004](docs/adr/0004-typescript-stack.md).
 website with a chatbot grounded in that information. The factory builds and
 maintains the platform; chatbot answer quality is gated by eval suites.
 
-## What works today (M0)
+## What works today
 
 - `POST /webhooks/github` verifies the HMAC signature, ignores redeliveries,
   and turns an issue labeled `factory` into a requirement and a run.
@@ -75,6 +75,16 @@ maintains the platform; chatbot answer quality is gated by eval suites.
 - The audit table rejects `UPDATE`, `DELETE` and `TRUNCATE`, including on
   individual partitions. If a privileged user disables that, the hash chain
   still pinpoints the edited event (see the integration tests).
+- **Durable step queue.** Workers claim steps with `FOR UPDATE SKIP LOCKED`
+  under a lease and extend it with heartbeats. Failures are classified:
+  transient errors retry with exponential backoff and full jitter (honoring
+  `Retry-After`), timeouts retry once, permanent errors go straight to the
+  dead-letter queue. A step whose worker dies is reclaimed when its lease
+  expires, and the dead worker's late result is rejected.
+- **Failure capture.** Every attempt is kept in `step_attempt` with its worker,
+  outcome, failure class and error details. `GET /admin/dead-letters` lists
+  them and `POST /admin/steps/:id/replay` retries one, recording who did it.
+  Admin routes need `Authorization: Bearer $ADMIN_TOKEN`.
 
 ## Run it locally
 
