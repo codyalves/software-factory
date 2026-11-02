@@ -17,7 +17,7 @@ not trust the operator.
 - Payloads are stored as their exact canonical JSON text; a generated `jsonb`
   column is kept for querying.
 - Triggers block `UPDATE`, `DELETE` and `TRUNCATE`, including on partitions.
-- The same hash formula exists in SQL and C#, pinned together by test vectors.
+- The same hash formula exists in SQL and TypeScript, pinned together by test vectors.
 
 ## Consequences
 

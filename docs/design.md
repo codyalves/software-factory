@@ -23,9 +23,9 @@ Three deployables and three stores.
 
 | Component | Role |
 | --- | --- |
-| `Factory.Api` | Webhook intake, dashboard API. Stateless; scales behind a load balancer. |
-| `Factory.Orchestrator` | Run state machine and outbox relay. The only component that merges. |
-| `Factory.Workers` | Lease steps; run each agent or gate step in a fresh sandbox container. Scale on queue depth. |
+| `apps/api` | Webhook intake, dashboard API. Stateless; scales behind a load balancer. |
+| `apps/orchestrator` | Run state machine and outbox relay. The only component that merges. |
+| `apps/workers` | Lease steps; run each agent or gate step in a fresh sandbox container. Scale on queue depth. |
 | Postgres | System of record: runs, queue, evidence, audit chain. |
 | Redis | Rate limits per model and repo, locks. |
 | Object storage | Logs, diffs, transcripts, test reports, addressed by SHA-256. |
@@ -38,7 +38,7 @@ Three deployables and three stores.
   to 4 implement attempts.
 - Any active run can go to Escalated (budget, attempts, low confidence) or
   Cancelled. Triage can Reject.
-- Encoded in `Factory.Domain.Runs.RunStateMachine`; transitions commit with
+- Encoded in `packages/domain/src/run-state-machine.ts`; transitions commit with
   their audit event in one transaction.
 
 ## Audit chain
@@ -48,7 +48,7 @@ Three deployables and three stores.
 - Appends go through the `audit_append` SQL function, which serializes writers
   with an advisory lock.
 - Triggers reject `UPDATE`, `DELETE` and `TRUNCATE`.
-- `audit_verify()` in SQL and `AuditChain.Verify` in C# implement the same check;
+- `audit_verify()` in SQL and `verifyChain` in TypeScript implement the same check;
   test vectors keep them in lockstep.
 - Planned: anchor the head hash in a signed release tag per release.
 - `audit_event` and `cost_ledger` are partitioned by month from day one.

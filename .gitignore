@@ -1,9 +1,7 @@
-bin/
-obj/
-.vs/
+node_modules/
+coverage/
+dist/
+.env
 .vscode/
 .idea/
-*.user
-TestResults/
-.env
-*.trx
+*.log
