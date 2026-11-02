@@ -39,7 +39,7 @@ export const RISK_QUESTIONS = {
     name: 'risk_platform',
     tier: 'high',
     instructions:
-      'Would doing this work add, remove or upgrade a dependency, or change the build, CI, deployment, infrastructure, quality gates or the software factory itself? Answer "yes" if the issue would plausibly require it, even if it does not say so.',
+      'Would doing this work add, remove or upgrade a dependency, or change the build, CI, deployment, hosting infrastructure or quality gates? Using storage, services or libraries the product already has does not count. Answer "yes" if the issue would plausibly require it, even if it does not say so.',
     options: YES_NO,
   },
   existingBehavior: {
@@ -61,7 +61,7 @@ export const ISSUE_TYPE_QUESTION = {
 export const SPEC_READY_QUESTION = {
   name: 'spec_ready',
   instructions:
-    'Can this be implemented and verified as written? "yes" only if every acceptance criterion is specific and testable.',
+    'Could a competent engineer build this and check each stated expectation with tests, without going back to the author? "yes" if the goal and the expected behavior are clear; details an engineer would normally decide (exact colors, which library, how a job is scheduled) do not make it unready. "no" if the goal, the expected behavior, or how to tell it works is missing or ambiguous.',
   options: YES_NO,
 } as const satisfies DecisionQuestion;
 
