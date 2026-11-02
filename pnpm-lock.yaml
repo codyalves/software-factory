@@ -208,6 +208,9 @@ importers:
       '@factory/domain':
         specifier: workspace:*
         version: link:../../packages/domain
+      '@factory/github':
+        specifier: workspace:*
+        version: link:../../packages/github
       zod:
         specifier: 4.6.7
         version: 4.6.7

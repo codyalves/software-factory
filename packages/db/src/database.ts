@@ -73,6 +73,10 @@ interface OutboxTable {
   attempts: Generated<number>;
   created_at: Generated<Date>;
   sent_at: Date | null;
+  next_attempt_at: Generated<Date>;
+  last_error: string | null;
+  failed_at: Date | null;
+  result: ColumnType<unknown, never, string | null>;
 }
 
 export interface Database {

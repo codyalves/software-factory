@@ -1,9 +1,14 @@
-import { createDb, RunStore, StepQueue } from '@factory/db';
+import { readFileSync } from 'node:fs';
+import { createDb, OutboxRelay, RunStore, StepQueue } from '@factory/db';
 import { DEFAULT_CONFIDENCE_THRESHOLD } from '@factory/domain';
+import { GitHubAppAuth, GitHubForge, parsePrivateKey } from '@factory/github';
 import { z } from 'zod';
 import { runDrainLoop } from './drain-loop.ts';
+import { deliverNextOutbox } from './outbox.ts';
 import { runPeriodically } from './periodic.ts';
 import { applyNextTriageResult, startNextTriage } from './triage.ts';
+
+const optional = z.preprocess((v) => (v === '' ? undefined : v), z.string().optional());
 
 const config = z
   .object({
@@ -11,6 +16,10 @@ const config = z
     IDLE_DELAY_MS: z.coerce.number().int().positive().default(5_000),
     REAP_INTERVAL_MS: z.coerce.number().int().positive().default(15_000),
     CONFIDENCE_THRESHOLD: z.coerce.number().min(0).max(1).default(DEFAULT_CONFIDENCE_THRESHOLD),
+    // The factory's GitHub App. Without it the outbox relay is off and messages wait.
+    GITHUB_APP_ID: optional,
+    GITHUB_APP_PRIVATE_KEY: optional,
+    GITHUB_APP_PRIVATE_KEY_FILE: optional,
   })
   .parse(process.env);
 
@@ -24,7 +33,18 @@ for (const signal of ['SIGINT', 'SIGTERM'] as const) {
   process.once(signal, () => controller.abort());
 }
 
-console.info('orchestrator started');
+const privateKeyPem =
+  config.GITHUB_APP_PRIVATE_KEY ??
+  (config.GITHUB_APP_PRIVATE_KEY_FILE ? readFileSync(config.GITHUB_APP_PRIVATE_KEY_FILE, 'utf8') : undefined);
+
+const forge =
+  config.GITHUB_APP_ID && privateKeyPem
+    ? new GitHubForge({
+        auth: new GitHubAppAuth({ appId: config.GITHUB_APP_ID, privateKey: parsePrivateKey(privateKeyPem) }),
+      })
+    : null;
+
+console.info(`orchestrator started; outbox relay ${forge ? 'on' : 'off (no GitHub App configured)'}`);
 await Promise.all([
   runDrainLoop({ name: 'intake', next: () => startNextTriage(runs), ...loop }),
   runDrainLoop({
@@ -32,6 +52,13 @@ await Promise.all([
     next: () => applyNextTriageResult(runs, config.CONFIDENCE_THRESHOLD),
     ...loop,
   }),
+  forge
+    ? runDrainLoop({
+        name: 'outbox relay',
+        next: () => deliverNextOutbox(new OutboxRelay(db), forge),
+        ...loop,
+      })
+    : Promise.resolve(),
   // Steps whose worker crashed or hung get their lease taken back and are
   // retried (or dead-lettered) like any other transient failure.
   runPeriodically(

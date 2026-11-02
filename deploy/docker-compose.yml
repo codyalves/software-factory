@@ -48,6 +48,9 @@ services:
     build: { context: .., dockerfile: deploy/Dockerfile, args: { ENTRY: apps/orchestrator/src/main.ts } }
     environment:
       DATABASE_URL: *database-url
+      # Without these the outbox relay is off and comments wait (docs/github-app.md).
+      GITHUB_APP_ID: ${GITHUB_APP_ID:-}
+      GITHUB_APP_PRIVATE_KEY: ${GITHUB_APP_PRIVATE_KEY:-}
     depends_on:
       postgres: { condition: service_healthy }
       api: { condition: service_started }
