@@ -1,16 +1,28 @@
 import { mkdir, mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { runCommand } from './gates.ts';
 
 const signal = new AbortController().signal;
+
+// Like a real workspace: a checkout inside its own temp directory.
+let parent: string;
+let checkout: string;
+beforeAll(async () => {
+  parent = await mkdtemp(join(tmpdir(), 'gates-test-'));
+  checkout = join(parent, 'repo');
+  await mkdir(checkout);
+});
+afterAll(async () => {
+  await rm(parent, { recursive: true, force: true });
+});
 
 describe('runCommand', () => {
   it('reports the exit code and output', async () => {
     const run = await runCommand(
       ['node', '-e', 'console.log("hi"); process.exit(3)'],
-      tmpdir(),
+      checkout,
       10_000,
       signal,
     );
@@ -23,7 +35,7 @@ describe('runCommand', () => {
     try {
       const run = await runCommand(
         ['node', '-e', 'console.log(process.env.FACTORY_TEST_SECRET ?? "absent")'],
-        tmpdir(),
+        checkout,
         10_000,
         signal,
       );
@@ -39,7 +51,7 @@ describe('runCommand', () => {
     try {
       const run = await runCommand(
         ['node', '-e', 'console.log(process.env.HTTPS_PROXY)'],
-        tmpdir(),
+        checkout,
         10_000,
         signal,
       );
@@ -66,13 +78,13 @@ describe('runCommand', () => {
   });
 
   it('kills a command that runs past its timeout', async () => {
-    const run = await runCommand(['node', '-e', 'setTimeout(() => {}, 60_000)'], tmpdir(), 300, signal);
+    const run = await runCommand(['node', '-e', 'setTimeout(() => {}, 60_000)'], checkout, 300, signal);
 
     expect(run.timedOut).toBe(true);
   });
 
   it('reports a missing program as a failure, not a crash', async () => {
-    const run = await runCommand(['definitely-not-a-program'], tmpdir(), 10_000, signal);
+    const run = await runCommand(['definitely-not-a-program'], checkout, 10_000, signal);
 
     expect(run.exitCode).not.toBe(0);
   });
