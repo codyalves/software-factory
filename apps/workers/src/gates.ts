@@ -1,5 +1,6 @@
 import { spawn } from 'node:child_process';
-import { readFile } from 'node:fs/promises';
+import { mkdir, readFile } from 'node:fs/promises';
+import { basename, dirname, join } from 'node:path';
 import {
   type AcceptanceCriterion,
   changesGate,
@@ -10,6 +11,7 @@ import {
   traceabilityGate,
 } from '@factory/domain';
 import { z } from 'zod';
+import { networkEnv } from './env.ts';
 import type { Workspace } from './workspace.ts';
 
 const argv = z.array(z.string().min(1)).min(1);
@@ -111,19 +113,24 @@ const OUTPUT_LIMIT = 64_000;
  * Isolation is a process today. Running gates in a container with no
  * network is the next hardening step (docs/adr/0005).
  */
-export function runCommand(
+export async function runCommand(
   command: readonly string[],
   cwd: string,
   timeoutMs: number,
   signal: AbortSignal,
 ): Promise<CommandRun> {
+  const home = join(dirname(cwd), `${basename(cwd)}-home`);
+  await mkdir(home, { recursive: true });
   return new Promise((resolve) => {
     const [file, ...args] = command as [string, ...string[]];
     const child = spawn(file, args, {
       cwd,
       env: {
+        ...networkEnv(),
         PATH: process.env.PATH ?? '/usr/bin:/bin',
-        HOME: cwd,
+        // Outside the checkout: tools write caches under HOME, and those must
+        // not end up linted, tested or diffed as part of the target.
+        HOME: home,
         CI: '1',
         NODE_ENV: 'test',
         LANG: 'C.UTF-8',

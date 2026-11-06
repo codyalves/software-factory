@@ -124,6 +124,7 @@ describe('ClaudeCodeImplementer', () => {
       expect(flag('--model')).toBe('claude-sonnet-5-5');
       expect(flag('--max-budget-usd')).toBe('1.25');
       expect(flag('--permission-mode')).toBe('dontAsk');
+      expect(flag('--add-dir')).toBe(dir);
       expect(call.args).toContain('Bash(pnpm test:*)');
       expect(call.args).not.toContain('Bash');
       expect(call.env.ANTHROPIC_API_KEY).toBe('sk-ant-test-key');

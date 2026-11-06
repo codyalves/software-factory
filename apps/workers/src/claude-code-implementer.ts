@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { Prompt } from '@factory/decisions';
 import { z } from 'zod';
+import { networkEnv } from './env.ts';
 import type { Implementer, ImplementInput } from './implementer.ts';
 import { StepError } from './step-runner.ts';
 
@@ -128,6 +129,9 @@ export class ClaudeCodeImplementer implements Implementer {
       'WebSearch',
       '--strict-mcp-config',
       '--no-session-persistence',
+      // --bare skips CLAUDE.md discovery; this loads the target's own (protected) CLAUDE.md.
+      '--add-dir',
+      input.dir,
       '--append-system-prompt',
       this.#options.prompt.text,
     ];
@@ -138,6 +142,7 @@ export class ClaudeCodeImplementer implements Implementer {
       const run = await runAgent(this.#options.bin ?? 'claude', args, implementationPrompt(input), {
         cwd: input.dir,
         env: {
+          ...networkEnv(),
           PATH: process.env.PATH ?? '/usr/bin:/bin',
           HOME: home,
           ANTHROPIC_API_KEY: this.#options.apiKey,
