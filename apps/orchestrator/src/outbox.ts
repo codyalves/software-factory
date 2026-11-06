@@ -9,6 +9,14 @@ const issueComment = z.object({
   body: z.string().min(1),
 });
 
+const pullRequest = z.object({
+  repo: z.string().regex(/^[\w.-]+\/[\w.-]+$/),
+  head: z.string().min(1),
+  base: z.string().min(1),
+  title: z.string().min(1),
+  body: z.string(),
+});
+
 class MalformedMessage extends Error {}
 
 /** Sends one outbox message through the forge, by kind. */
@@ -25,6 +33,13 @@ export function createOutboxSender(forge: ForgeAdapter): (message: OutboxMessage
           dedupeKey: `outbox-${message.id}`,
           mayAlreadyExist: message.attempts > 0,
         });
+      }
+      case 'pull_request.open': {
+        const parsed = pullRequest.safeParse(message.payload);
+        if (!parsed.success) {
+          throw new MalformedMessage(`malformed pull_request.open payload: ${parsed.error.message}`);
+        }
+        return forge.openPullRequest({ ...parsed.data, mayAlreadyExist: message.attempts > 0 });
       }
       default:
         throw new MalformedMessage(`no sender for outbox kind ${message.kind}`);

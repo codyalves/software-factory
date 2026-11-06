@@ -17,6 +17,17 @@ export interface IssueComment {
   readonly mayAlreadyExist: boolean;
 }
 
+export interface PullRequestDraft {
+  readonly repo: string;
+  /** The factory branch, in the same repository. */
+  readonly head: string;
+  readonly base: string;
+  readonly title: string;
+  readonly body: string;
+  /** True on a retry, when an earlier attempt may have opened it before failing. */
+  readonly mayAlreadyExist: boolean;
+}
+
 /**
  * Everything the factory needs from a git host. GitHub is the first
  * implementation; GitLab can follow without touching the orchestrator.
@@ -24,12 +35,7 @@ export interface IssueComment {
 export interface ForgeAdapter {
   readonly name: string;
   comment(comment: IssueComment): Promise<{ url: string; reused: boolean }>;
-  openPullRequest(pr: {
-    repo: string;
-    head: string;
-    base: string;
-    title: string;
-    body: string;
-  }): Promise<{ number: number; url: string }>;
+  /** Opens a pull request, or returns the one already open for `head` on a retry. */
+  openPullRequest(pr: PullRequestDraft): Promise<{ number: number; url: string; reused: boolean }>;
   mergePullRequest(repo: string, pullNumber: number): Promise<void>;
 }

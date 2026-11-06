@@ -1,4 +1,9 @@
-import { evaluateTransition, type ForgeIssue, type RunState } from '@factory/domain';
+import {
+  type AcceptanceCriterion,
+  evaluateTransition,
+  type ForgeIssue,
+  type RunState,
+} from '@factory/domain';
 import { type Kysely, sql, type Transaction } from 'kysely';
 import { appendAuditEvent } from './audit-store.ts';
 import type { Database } from './database.ts';
@@ -24,6 +29,8 @@ export interface RunIssue {
   readonly issueNumber: number;
   readonly title: string;
   readonly body: string;
+  /** Numbered when the run leaves Planning; empty before. */
+  readonly criteria: readonly AcceptanceCriterion[];
 }
 
 /** A step of a run that has finished, one way or the other. */
@@ -125,6 +132,20 @@ export class RunStore {
     reason: string,
     effect?: TransitionEffect,
   ): Promise<RunSummary | null> {
+    return this.advanceNextWith(from, async (trx, run) => {
+      await effect?.(trx, run);
+      return { to, reason };
+    });
+  }
+
+  /**
+   * Like advanceNext, but `decide` chooses the next state (and writes its
+   * effects in the same transaction).
+   */
+  advanceNextWith(
+    from: RunState,
+    decide: (trx: Transaction<Database>, run: RunSummary) => Promise<{ to: RunState; reason: string }>,
+  ): Promise<RunSummary | null> {
     return this.#db.transaction().execute(async (trx) => {
       const row = await trx
         .selectFrom('run')
@@ -141,8 +162,8 @@ export class RunStore {
       }
 
       const run = toSummary(row);
-      await effect?.(trx, run);
-      return transition(trx, run, to, reason);
+      const next = await decide(trx, run);
+      return transition(trx, run, next.to, next.reason);
     });
   }
 
@@ -178,9 +199,11 @@ export class RunStore {
         .where('run.state', '=', from)
         .where('step.kind', '=', kind)
         .where('step.status', 'in', ['succeeded', 'dead_lettered'])
+        // A looping run has finished steps from earlier attempts; apply each once.
+        .where('step.consumed_at', 'is', null)
         .orderBy('step.finished_at')
         .limit(1)
-        .forUpdate('run')
+        .forUpdate(['run', 'step'])
         .skipLocked()
         .executeTakeFirst();
 
@@ -189,6 +212,11 @@ export class RunStore {
       }
 
       const run = toSummary(row);
+      await trx
+        .updateTable('step')
+        .set({ consumed_at: sql<Date>`now()` })
+        .where('id', '=', row.step_id)
+        .execute();
       const { to, reason } = await decide(trx, run, {
         id: row.step_id,
         kind: row.step_kind,
@@ -210,6 +238,7 @@ export class RunStore {
         'requirement.issue_number',
         'requirement.title',
         'requirement.body',
+        'requirement.criteria',
       ])
       .where('run.id', '=', runId)
       .executeTakeFirst();
@@ -220,6 +249,7 @@ export class RunStore {
           issueNumber: row.issue_number,
           title: row.title,
           body: row.body,
+          criteria: Array.isArray(row.criteria) ? (row.criteria as AcceptanceCriterion[]) : [],
         }
       : null;
   }

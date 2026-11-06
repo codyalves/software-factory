@@ -1,6 +1,6 @@
-import type { ForgeAdapter, IssueComment } from '@factory/domain';
+import type { ForgeAdapter, IssueComment, PullRequestDraft } from '@factory/domain';
 import type { GitHubAppAuth } from './app-auth.ts';
-import { type Fetch, githubRequest } from './client.ts';
+import { type Fetch, ForgeError, githubRequest } from './client.ts';
 
 /** Hidden in every comment the factory posts, so a retry can recognize its own earlier post. */
 export function dedupeMarker(key: string): string {
@@ -63,20 +63,39 @@ export class GitHubForge implements ForgeAdapter {
     return { url: created.html_url, reused: false };
   }
 
-  async openPullRequest(pr: {
-    repo: string;
-    head: string;
-    base: string;
-    title: string;
-    body: string;
-  }): Promise<{ number: number; url: string }> {
-    const created = await githubRequest<{ number: number; html_url: string }>(
-      await this.#request(pr.repo),
-      'POST',
-      `/repos/${pr.repo}/pulls`,
-      { title: pr.title, head: pr.head, base: pr.base, body: pr.body },
+  async openPullRequest(pr: PullRequestDraft): Promise<{ number: number; url: string; reused: boolean }> {
+    if (pr.mayAlreadyExist) {
+      const existing = await this.#openPullFor(pr.repo, pr.head);
+      if (existing) return { ...existing, reused: true };
+    }
+    try {
+      const created = await githubRequest<{ number: number; html_url: string }>(
+        await this.#request(pr.repo),
+        'POST',
+        `/repos/${pr.repo}/pulls`,
+        { title: pr.title, head: pr.head, base: pr.base, body: pr.body },
+      );
+      return { number: created.number, url: created.html_url, reused: false };
+    } catch (error) {
+      // 422 when a pull request for this head already exists, e.g. opened by
+      // an attempt whose response was lost: find it rather than fail.
+      if (error instanceof ForgeError && error.status === 422) {
+        const existing = await this.#openPullFor(pr.repo, pr.head);
+        if (existing) return { ...existing, reused: true };
+      }
+      throw error;
+    }
+  }
+
+  async #openPullFor(repo: string, head: string): Promise<{ number: number; url: string } | null> {
+    const owner = repo.split('/')[0];
+    const pulls = await githubRequest<{ number: number; html_url: string }[]>(
+      await this.#request(repo),
+      'GET',
+      `/repos/${repo}/pulls?state=open&head=${encodeURIComponent(`${owner}:${head}`)}`,
     );
-    return { number: created.number, url: created.html_url };
+    const first = pulls[0];
+    return first ? { number: first.number, url: first.html_url } : null;
   }
 
   async mergePullRequest(repo: string, pullNumber: number): Promise<void> {
@@ -88,4 +107,18 @@ export class GitHubForge implements ForgeAdapter {
   async #request(repo: string) {
     return { fetch: this.#fetch, baseUrl: this.#baseUrl, token: await this.#auth.tokenFor(repo) };
   }
+}
+
+/**
+ * Git access to target repositories as the factory's GitHub App: an HTTPS
+ * URL with a short-lived installation token. Workers redact it from errors.
+ */
+export function gitHubRepoAccess(auth: Pick<GitHubAppAuth, 'tokenFor'>): {
+  remoteUrl(repo: string): Promise<string>;
+} {
+  return {
+    async remoteUrl(repo) {
+      return `https://x-access-token:${await auth.tokenFor(repo)}@github.com/${repo}.git`;
+    },
+  };
 }

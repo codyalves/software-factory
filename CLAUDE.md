@@ -36,13 +36,14 @@ imports include the `.ts` extension. Use `import type` for types.
 
 - `apps/api`: Fastify. Signed GitHub webhook intake, read routes, `/admin` (bearer `ADMIN_TOKEN`)
 - `apps/orchestrator`: the only writer of run state. Drain loops, outbox relay, lease reaper
-- `apps/workers`: claim steps from the queue and run handlers (triage today)
+- `apps/workers`: claim steps from the queue and run handlers: triage, implement, gate
 - `packages/domain`: pure logic. State machine, audit chain, retry policy, triage rules
 - `packages/db`: Kysely stores, migrator, step queue, outbox
 - `packages/decisions`: decision engines (Claude via structured outputs), prompt loading
 - `packages/github`: webhook verification, GitHub App auth, forge adapter
 - `db/migrations`: plain SQL, applied in name order
-- `prompts/`: versioned prompts; `gates/gates.yaml`: thresholds and merge policy
+- `prompts/`: versioned prompts; `gates/gates.yaml`: thresholds and merge policy;
+  `gates/targets.json`: how each target repo is built and gated
 
 ## Rules that keep the factory trustworthy
 
@@ -66,7 +67,10 @@ imports include the `.ts` extension. Use `import type` for types.
    off (`maxRetries: 0`).
 7. **Issue text is untrusted data.** Pass it to models as delimited material,
    never as instructions.
-8. **No secrets in the repo, logs or audit payloads.** Config comes from env
+8. **Implementers never commit, push or judge.** The worker commits what an
+   implementer leaves; gates in a fresh clone decide. Gate commands come from
+   `gates/targets.json` here, never from the target repo.
+9. **No secrets in the repo, logs or audit payloads.** Config comes from env
    and is validated with Zod at startup.
 
 ## Protected paths (CODEOWNERS)
@@ -74,7 +78,7 @@ imports include the `.ts` extension. Use `import type` for types.
 Changes to these need the owner's review: `gates/`, `prompts/`,
 `db/migrations/`, `.github/`, `biome.json`, `CLAUDE.md`,
 `packages/domain/src/audit-chain.ts`, `packages/domain/src/run-state-machine.ts`,
-`packages/domain/src/triage.ts`, `evals/`, and the spending controls
+`packages/domain/src/triage.ts`, `packages/domain/src/delivery.ts`, `evals/`, and the spending controls
 (`packages/db/src/factory-control.ts`, `packages/decisions/src/pricing.ts`).
 Prompts are versioned by file name and content hash; a meaningfully different
 prompt gets a new file (`triage.v2.md`), not an edit.

@@ -54,7 +54,7 @@ Why TypeScript: [ADR 0004](docs/adr/0004-typescript-stack.md).
 | Milestone | Scope | State |
 | --- | --- | --- |
 | M0 Skeleton | Schema, hash-chained audit log, signed webhook intake, run state machine, CI | Done |
-| **M1 Reliable core** | Queue, leases, retries, DLQ, outbox, gates, iteration loop, decision layer | **In progress**: step queue, triage and outbox relay done |
+| **M1 Reliable core** | Queue, leases, retries, DLQ, outbox, gates, iteration loop, decision layer | **In progress**: step queue, triage, outbox relay, budget and the implement-and-gate loop done; Claude Code implementer next |
 | M2 Visible | Dashboard, DLQ replay, traceability report, cloud deploy with LB and CDN | Planned |
 | M3 More intake | CI-failure and error-webhook intake, scheduled self-review | Planned |
 | M4 Reference mode | Behavior traces from a reference app become issues and replay gates | Planned |
@@ -119,6 +119,19 @@ maintains the platform; chatbot answer quality is gated by eval suites.
   today's total reaches the budget (default $3.00/day, about $100 a month),
   workers stop claiming until midnight in the budget's time zone. Pause,
   resume and budget changes are audit events naming who made them.
+- **Implement-and-gate loop.** A planned run numbers the issue's acceptance
+  criteria (AC-1, AC-2, ...), then loops: an implementer changes the code on
+  the run's branch, the worker commits and pushes it with trailers naming the
+  run and attempt, and the gates run on that exact commit in a fresh clone.
+  Failing gates go back to the implementer as feedback (up to 4 attempts or
+  the run's budget, then a person); passing gates record the traceability
+  links and queue the pull request. Gates: the target's own commands (from
+  [`gates/targets.json`](gates/targets.json), which lives here so an agent
+  cannot change how it is judged), plus built-in checks for an empty change,
+  protected files, committed credentials, and **traceability**: every
+  criterion must be named by a test (`it('AC-1: ...')`), giving a record of
+  requirement → criterion → test → commit. See
+  [ADR 0005](docs/adr/0005-implement-and-gate-loop.md).
 
 ## Run it locally
 

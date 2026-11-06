@@ -1,10 +1,16 @@
+import { readFileSync } from 'node:fs';
 import { hostname } from 'node:os';
 import Anthropic from '@anthropic-ai/sdk';
 import { createDb, FactoryControl, RunStore, StepQueue } from '@factory/db';
 import { ClaudeDecisionModel, loadPrompt } from '@factory/decisions';
+import { GitHubAppAuth, gitHubRepoAccess, parsePrivateKey } from '@factory/github';
 import { z } from 'zod';
+import { loadTargets } from './gates.ts';
 import { createHandlers } from './handlers.ts';
 import { runSteps } from './step-runner.ts';
+import { localRepoAccess, type RepoAccess } from './workspace.ts';
+
+const optional = z.preprocess((v) => (v === '' ? undefined : v), z.string().optional());
 
 const config = z
   .object({
@@ -20,6 +26,13 @@ const config = z
       .string()
       .regex(/^[\w.-]+$/)
       .default('triage.v3'),
+    // Implement and gate steps: where targets are configured and how to reach them.
+    TARGETS_FILE: z.string().default('gates/targets.json'),
+    // Local mode: a JSON map of "owner/repo" -> path to a git repo; replaces GitHub access.
+    LOCAL_REPOS: optional,
+    GITHUB_APP_ID: optional,
+    GITHUB_APP_PRIVATE_KEY: optional,
+    GITHUB_APP_PRIVATE_KEY_FILE: optional,
   })
   .parse(process.env);
 
@@ -40,7 +53,27 @@ const decisionModel = config.ANTHROPIC_API_KEY
     })
   : null;
 
-const handlers = createHandlers({ runs: new RunStore(db), decisionModel });
+function repoAccess(): RepoAccess | null {
+  if (config.LOCAL_REPOS) {
+    return localRepoAccess(z.record(z.string(), z.string()).parse(JSON.parse(config.LOCAL_REPOS)));
+  }
+  const key =
+    config.GITHUB_APP_PRIVATE_KEY ??
+    (config.GITHUB_APP_PRIVATE_KEY_FILE
+      ? readFileSync(config.GITHUB_APP_PRIVATE_KEY_FILE, 'utf8')
+      : undefined);
+  return config.GITHUB_APP_ID && key
+    ? gitHubRepoAccess(new GitHubAppAuth({ appId: config.GITHUB_APP_ID, privateKey: parsePrivateKey(key) }))
+    : null;
+}
+
+const access = repoAccess();
+const handlers = createHandlers({
+  runs: new RunStore(db),
+  decisionModel,
+  // The implementer arrives with the Claude Code integration; until then this worker only gates.
+  delivery: access ? { targets: await loadTargets(config.TARGETS_FILE), access, implementer: null } : null,
+});
 
 console.info(`worker ${config.WORKER_ID} started; handles: ${Object.keys(handlers).join(', ') || 'none'}`);
 await runSteps({
