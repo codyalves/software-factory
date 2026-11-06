@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { ChangedFile, TestFile } from '@factory/domain';
 import { isTestFile } from '@factory/domain';
+import { networkEnv } from './env.ts';
 
 /** How a worker reaches a target repository. */
 export interface RepoAccess {
@@ -178,6 +179,7 @@ function git(cwd: string, args: readonly string[], signal?: AbortSignal): Promis
         signal,
         maxBuffer: 64 * 1024 * 1024,
         env: {
+          ...networkEnv(),
           PATH: process.env.PATH ?? '/usr/bin:/bin',
           HOME: process.env.HOME ?? tmpdir(),
           GIT_TERMINAL_PROMPT: '0',

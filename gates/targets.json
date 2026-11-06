@@ -1,1 +1,24 @@
-{}
+{
+  "codyalves/factory-target-app": {
+    "baseBranch": "main",
+    "setup": [["pnpm", "install", "--frozen-lockfile"]],
+    "gates": {
+      "lint": ["pnpm", "lint"],
+      "typecheck": ["pnpm", "typecheck"],
+      "unit_tests": ["pnpm", "test"],
+      "build": ["pnpm", "build"]
+    },
+    "protectedPaths": [
+      ".github/**",
+      "package.json",
+      "pnpm-lock.yaml",
+      "pnpm-workspace.yaml",
+      "tsconfig.json",
+      "biome.json",
+      "vitest.config.*",
+      "next.config.*",
+      "CLAUDE.md"
+    ],
+    "commandTimeoutMs": 600000
+  }
+}

@@ -1,4 +1,4 @@
-import type { ForgeAdapter, IssueComment, PullRequestDraft } from '@factory/domain';
+import type { ForgeAdapter, ForgeIssue, IssueComment, PullRequestDraft } from '@factory/domain';
 import type { GitHubAppAuth } from './app-auth.ts';
 import { type Fetch, ForgeError, githubRequest } from './client.ts';
 
@@ -96,6 +96,30 @@ export class GitHubForge implements ForgeAdapter {
     );
     const first = pulls[0];
     return first ? { number: first.number, url: first.html_url } : null;
+  }
+
+  /** An issue as the factory sees it, for starting a run by hand. */
+  async issue(repo: string, issueNumber: number): Promise<ForgeIssue> {
+    const issue = await githubRequest<{
+      number: number;
+      title: string;
+      body: string | null;
+      labels: ({ name?: string } | string)[];
+      pull_request?: unknown;
+    }>(await this.#request(repo), 'GET', `/repos/${repo}/issues/${issueNumber}`);
+    if (issue.pull_request) {
+      throw new ForgeError(`${repo}#${issueNumber} is a pull request, not an issue`, {
+        status: 422,
+        retryable: false,
+      });
+    }
+    return {
+      repo,
+      number: issue.number,
+      title: issue.title,
+      body: issue.body ?? '',
+      labels: issue.labels.map((l) => (typeof l === 'string' ? l : (l.name ?? ''))).filter(Boolean),
+    };
   }
 
   async mergePullRequest(repo: string, pullNumber: number): Promise<void> {

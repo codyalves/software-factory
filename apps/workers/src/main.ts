@@ -5,6 +5,7 @@ import { createDb, FactoryControl, RunStore, StepQueue } from '@factory/db';
 import { ClaudeDecisionModel, loadPrompt } from '@factory/decisions';
 import { GitHubAppAuth, gitHubRepoAccess, parsePrivateKey } from '@factory/github';
 import { z } from 'zod';
+import { ClaudeCodeImplementer } from './claude-code-implementer.ts';
 import { loadTargets } from './gates.ts';
 import { createHandlers } from './handlers.ts';
 import { runSteps } from './step-runner.ts';
@@ -33,6 +34,16 @@ const config = z
     GITHUB_APP_ID: optional,
     GITHUB_APP_PRIVATE_KEY: optional,
     GITHUB_APP_PRIVATE_KEY_FILE: optional,
+    // The implementer: Claude Code, headless. Needs ANTHROPIC_API_KEY.
+    IMPLEMENT_MODEL: z.string().default('claude-sonnet-5-5'),
+    IMPLEMENT_FRONTIER_MODEL: z.string().default('claude-opus-5-5'),
+    IMPLEMENT_ESCALATE_AFTER: z.coerce.number().int().min(0).default(2),
+    IMPLEMENT_ATTEMPT_BUDGET_USD: z.coerce.number().positive().max(20).default(1.25),
+    IMPLEMENT_PROMPT: z
+      .string()
+      .regex(/^[\w.-]+$/)
+      .default('implement.v1'),
+    CLAUDE_BIN: z.string().default('claude'),
   })
   .parse(process.env);
 
@@ -71,8 +82,24 @@ const access = repoAccess();
 const handlers = createHandlers({
   runs: new RunStore(db),
   decisionModel,
-  // The implementer arrives with the Claude Code integration; until then this worker only gates.
-  delivery: access ? { targets: await loadTargets(config.TARGETS_FILE), access, implementer: null } : null,
+  delivery: access
+    ? {
+        targets: await loadTargets(config.TARGETS_FILE),
+        access,
+        // Without an API key this worker still runs gates, but does not implement.
+        implementer: config.ANTHROPIC_API_KEY
+          ? new ClaudeCodeImplementer({
+              apiKey: config.ANTHROPIC_API_KEY,
+              prompt: await loadPrompt(config.PROMPTS_DIR, config.IMPLEMENT_PROMPT),
+              model: config.IMPLEMENT_MODEL,
+              frontierModel: config.IMPLEMENT_FRONTIER_MODEL,
+              escalateAfter: config.IMPLEMENT_ESCALATE_AFTER,
+              maxBudgetUsd: config.IMPLEMENT_ATTEMPT_BUDGET_USD,
+              bin: config.CLAUDE_BIN,
+            })
+          : null,
+      }
+    : null,
 });
 
 console.info(`worker ${config.WORKER_ID} started; handles: ${Object.keys(handlers).join(', ') || 'none'}`);
