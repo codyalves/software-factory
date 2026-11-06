@@ -2,7 +2,7 @@ import { execFileSync } from 'node:child_process';
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { AuditStore, RunStore, StepQueue } from '@factory/db';
+import { AuditStore, OutboxRelay, RunStore, StepQueue } from '@factory/db';
 import { createTestDatabase, TEST_DATABASE_URL, type TestDatabase } from '@factory/db/testing';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import {
@@ -10,6 +10,8 @@ import {
   applyNextImplementation,
   startNextImplementation,
 } from '../../orchestrator/src/delivery.ts';
+import { deliverNextOutbox } from '../../orchestrator/src/outbox.ts';
+import { driveRun, renderRunReport } from './drive.ts';
 import type { TargetConfig } from './gates.ts';
 import { createHandlers } from './handlers.ts';
 import type { Implementer, ImplementInput } from './implementer.ts';
@@ -147,7 +149,7 @@ describe.skipIf(!TEST_DATABASE_URL)('implement-and-gate loop', () => {
       await work();
       return applyNextGateResult(runs);
     };
-    return { runs, runId: created.runId, attempt };
+    return { runs, queue, handlers, runId: created.runId, attempt };
   }
 
   it('iterates on failed gates until they pass, then opens a traced pull request', async () => {
@@ -289,5 +291,81 @@ describe.skipIf(!TEST_DATABASE_URL)('implement-and-gate loop', () => {
     expect(await t.db.selectFrom('step').select('kind').where('kind', '=', 'implement').execute()).toEqual(
       [],
     );
+  });
+
+  it('drives a run to an opened pull request in one process, and reports it from the audit log', async () => {
+    await using t = await createTestDatabase();
+    const { runs, queue, handlers, runId } = await setup(t, scripted([fixYear, addTracedTest]));
+    const opened: { head: string }[] = [];
+    const forge = {
+      name: 'fake',
+      comment: async () => ({ url: 'comment', reused: false }),
+      openPullRequest: async (pr: { head: string }) => {
+        opened.push(pr);
+        return { number: 12, url: 'https://github.com/codyalves/target/pull/12', reused: false };
+      },
+      mergePullRequest: async () => {},
+    };
+    const relay = new OutboxRelay(t.db);
+    const lines: string[] = [];
+
+    const outcome = await driveRun({
+      transitions: [
+        () => startNextImplementation(runs),
+        () => applyNextImplementation(runs),
+        () => applyNextGateResult(runs),
+        () => deliverNextOutbox(relay, forge),
+      ],
+      async work() {
+        const step = await queue.claim('worker-1', Object.keys(handlers), 120_000);
+        if (!step) return false;
+        await executeStep(step, {
+          queue,
+          worker: 'worker-1',
+          handlers,
+          leaseMs: 120_000,
+          idleDelayMs: 10,
+          signal: new AbortController().signal,
+          log: silent,
+        });
+        return true;
+      },
+      async finished() {
+        const run = await runs.get(runId);
+        const unsent = await t.db.selectFrom('outbox').select('id').where('sent_at', 'is', null).execute();
+        return run?.state === 'Reviewing' && unsent.length === 0;
+      },
+      maxRounds: 20,
+      log: (line) => lines.push(line),
+    });
+
+    expect(outcome.finished).toBe(true);
+    expect(opened).toHaveLength(1);
+    expect(lines.at(-1)).toMatch(/pull_request.open\) sent$/);
+
+    const audit = new AuditStore(t.db);
+    const report = renderRunReport(await audit.readAll(), {
+      title: 'codyalves/target#7 Footer shows last year',
+      spentUsd: 0.5,
+      pullRequestUrl: 'https://github.com/codyalves/target/pull/12',
+      chainValid: (await audit.verifyInDatabase()).length === 0,
+    });
+    expect(report).toContain('**Final state: Reviewing**: all 5 gates passed');
+    expect(report).toContain('- Implement attempts: 2');
+    expect(report).toContain('- **FAIL** traceability: 1 of 1 criteria have no test');
+    expect(report).toContain('| AC-1 | `year.test.js:4` |');
+    expect(report).toContain('Audit chain: valid');
+  });
+
+  it('stops driving when nothing can move', async () => {
+    const outcome = await driveRun({
+      transitions: [async () => null],
+      work: async () => false,
+      finished: async () => false,
+      maxRounds: 5,
+      log: () => {},
+    });
+
+    expect(outcome).toEqual({ rounds: 1, finished: false });
   });
 });

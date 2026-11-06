@@ -173,3 +173,33 @@ describe('GitHubForge.openPullRequest', () => {
     expect(result).toEqual({ number: 12, url: 'pr-12', reused: true });
   });
 });
+
+describe('GitHubForge.issue', () => {
+  it('reads an issue for a manual run', async () => {
+    const github = fakeGitHub({
+      'GET /repos/codyalves/target/issues/7': () =>
+        json({ number: 7, title: 'Footer', body: null, labels: [{ name: 'factory' }, 'bug'] }),
+    });
+
+    const issue = await new GitHubForge({ auth, fetch: github.fetch }).issue('codyalves/target', 7);
+
+    expect(issue).toEqual({
+      repo: 'codyalves/target',
+      number: 7,
+      title: 'Footer',
+      body: '',
+      labels: ['factory', 'bug'],
+    });
+  });
+
+  it('refuses a pull request', async () => {
+    const github = fakeGitHub({
+      'GET /repos/codyalves/target/issues/8': () =>
+        json({ number: 8, title: 'x', body: '', labels: [], pull_request: {} }),
+    });
+
+    await expect(new GitHubForge({ auth, fetch: github.fetch }).issue('codyalves/target', 8)).rejects.toThrow(
+      /is a pull request/,
+    );
+  });
+});

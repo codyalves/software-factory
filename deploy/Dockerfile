@@ -18,10 +18,11 @@ COPY packages/decisions/package.json packages/decisions/
 RUN pnpm install --frozen-lockfile --prod
 
 FROM node:26-slim
-# Workers clone target repositories and run their gates.
+# Workers clone target repositories, run Claude Code in them, and run their gates.
 RUN apt-get update \
  && apt-get install -y --no-install-recommends git ca-certificates \
- && rm -rf /var/lib/apt/lists/*
+ && rm -rf /var/lib/apt/lists/* \
+ && npm install -g @anthropic-ai/claude-code@2.1.319 pnpm@12.16.1
 ARG ENTRY
 ENV NODE_ENV=production \
     FACTORY_ENTRY=${ENTRY}

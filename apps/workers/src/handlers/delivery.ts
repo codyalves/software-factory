@@ -63,6 +63,8 @@ export function createImplementHandler(
           criteria: issue.criteria,
           attempt,
           feedback,
+          commands: [...target.setup, ...Object.values(target.gates)],
+          protectedPaths: target.protectedPaths,
         },
         { signal, recordUsage },
       );

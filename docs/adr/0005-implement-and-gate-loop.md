@@ -56,6 +56,17 @@ the PR an earlier attempt opened.
 steps of the same kind, so applying a step sets `step.consumed_at` in the
 transaction that moves the run.
 
+## The implementer
+
+Claude Code, headless (`prompts/implement.v1.md`), one `claude -p` run per
+attempt: `--bare`, `--permission-mode dontAsk` with an allow-list (file
+tools and the target's own commands only), `--max-budget-usd` per attempt,
+`--strict-mcp-config`, no web tools, a private HOME, and only the API key in
+its environment. Hitting the budget is a finished attempt for the gates to
+judge; failing to run at all (bad key, outage) is a step failure for the
+queue, so attempts are not wasted. Model tiers: Sonnet first, Opus after two
+failed attempts.
+
 ## Consequences
 
 - Pushing to `factory/*` branches is done by the worker, not through the

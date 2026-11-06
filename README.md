@@ -54,7 +54,7 @@ Why TypeScript: [ADR 0004](docs/adr/0004-typescript-stack.md).
 | Milestone | Scope | State |
 | --- | --- | --- |
 | M0 Skeleton | Schema, hash-chained audit log, signed webhook intake, run state machine, CI | Done |
-| **M1 Reliable core** | Queue, leases, retries, DLQ, outbox, gates, iteration loop, decision layer | **In progress**: step queue, triage, outbox relay, budget and the implement-and-gate loop done; Claude Code implementer next |
+| **M1 Reliable core** | Queue, leases, retries, DLQ, outbox, gates, iteration loop, decision layer | **In progress**: step queue, triage, outbox relay, budget, the implement-and-gate loop and the Claude Code implementer done; first live runs next |
 | M2 Visible | Dashboard, DLQ replay, traceability report, cloud deploy with LB and CDN | Planned |
 | M3 More intake | CI-failure and error-webhook intake, scheduled self-review | Planned |
 | M4 Reference mode | Behavior traces from a reference app become issues and replay gates | Planned |
@@ -132,6 +132,15 @@ maintains the platform; chatbot answer quality is gated by eval suites.
   criterion must be named by a test (`it('AC-1: ...')`), giving a record of
   requirement → criterion → test → commit. See
   [ADR 0005](docs/adr/0005-implement-and-gate-loop.md).
+- **Claude Code as the implementer.** Each attempt is one headless
+  `claude -p` run in the workspace: `--bare` (no personal settings, hooks or
+  memory), `--permission-mode dontAsk` with an allow-list (file tools plus
+  exactly the target's own setup and gate commands; no web, no MCP), a hard
+  `--max-budget-usd` cap, and only the API key in its environment, so it
+  cannot push. Sonnet does the first attempts; after two failures the next
+  attempt escalates to Opus (`gates.yaml`). Its own cost report is metered
+  into the ledger, and a run that cannot start (bad key, outage) fails the
+  step instead of spending an attempt.
 
 ## Run it locally
 
@@ -170,8 +179,16 @@ Only when you start it. Nothing is deployed, and nothing runs on a schedule.
   `scripts/factory.sh resume`. Pause it again when you stop working.
 - **The daily budget** caps what workers spend per day. The check happens
   before each step, so one step can finish slightly over the cap (a triage
-  step costs well under a cent). Per-run budgets come with the implement loop.
-- Workers without `ANTHROPIC_API_KEY` leave triage steps queued.
+  step costs well under a cent).
+- **Per run and per attempt:** a run escalates once its spend reaches its
+  budget ($5 by default), and each Claude Code attempt is hard-capped by
+  Claude Code itself (`IMPLEMENT_ATTEMPT_BUDGET_USD`, default $1.25).
+- **A single issue, start to finish:** Actions → **factory-run** → Run
+  workflow, with the repo and issue number. It triages, implements, gates,
+  comments and opens the PR, then pauses and stops. The report is in the run
+  summary and the audit log is an artifact. Locally:
+  `node apps/workers/src/run-issue.ts --repo owner/name --issue N`.
+- Workers without `ANTHROPIC_API_KEY` take neither triage nor implement steps.
 - **CI** never calls the Claude API. Unit and integration tests use a fake model.
 - **The triage eval** runs only by hand: Actions → triage-eval → Run workflow
   (about two cents per run with Haiku), or `pnpm eval:triage` locally.

@@ -14,6 +14,10 @@ export interface ImplementInput {
   readonly attempt: number;
   /** Why the previous attempt failed its gates, or null on the first attempt. */
   readonly feedback: string | null;
+  /** The target's setup and gate commands, which the implementer may run to check its work. */
+  readonly commands: readonly (readonly string[])[];
+  /** Paths the protected-paths gate rejects changes to. */
+  readonly protectedPaths: readonly string[];
 }
 
 /**

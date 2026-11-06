@@ -1,0 +1,104 @@
+name: factory-run
+
+# Runs the whole factory on one issue, then stops: triage, the
+# implement-and-gate loop, comments and the pull request. Started by hand
+# only (Actions -> factory-run -> Run workflow), so it spends API credit
+# only when you choose. Each run uses a fresh database; the full audit log
+# is uploaded as an artifact and the report appears in the run summary.
+on:
+  workflow_dispatch:
+    inputs:
+      repo:
+        description: Target repository
+        default: codyalves/factory-target-app
+        required: true
+      issue:
+        description: Issue number
+        required: true
+      daily_budget:
+        description: Spend cap for this run, USD
+        default: '3'
+        required: true
+      attempt_budget:
+        description: Claude Code cap per implement attempt, USD
+        default: '1.25'
+        required: true
+
+permissions:
+  contents: read
+
+# One factory run at a time.
+concurrency:
+  group: factory-run
+  cancel-in-progress: false
+
+jobs:
+  factory-run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: factory
+          POSTGRES_PASSWORD: factory
+          POSTGRES_DB: factory
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U factory"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgres://factory:factory@localhost:5432/factory
+      ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+      GITHUB_APP_ID: ${{ secrets.GITHUB_APP_ID }}
+      GITHUB_APP_PRIVATE_KEY: ${{ secrets.GITHUB_APP_PRIVATE_KEY }}
+      IMPLEMENT_ATTEMPT_BUDGET_USD: ${{ inputs.attempt_budget }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: pnpm/action-setup@v6
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 26
+          cache: pnpm
+
+      - name: Require the secrets
+        run: |
+          missing=""
+          [ -n "$ANTHROPIC_API_KEY" ] || missing="$missing ANTHROPIC_API_KEY"
+          [ -n "$GITHUB_APP_ID" ] || missing="$missing GITHUB_APP_ID"
+          [ -n "$GITHUB_APP_PRIVATE_KEY" ] || missing="$missing GITHUB_APP_PRIVATE_KEY"
+          if [ -n "$missing" ]; then
+            echo "Missing repository secrets:$missing (see docs/github-app.md)" | tee -a "$GITHUB_STEP_SUMMARY"
+            exit 1
+          fi
+
+      - name: Install
+        run: |
+          pnpm install --frozen-lockfile
+          npm install -g @anthropic-ai/claude-code@2.1.319
+
+      - name: Run the factory on ${{ inputs.repo }}#${{ inputs.issue }}
+        env:
+          REPO: ${{ inputs.repo }}
+          ISSUE: ${{ inputs.issue }}
+          DAILY_BUDGET: ${{ inputs.daily_budget }}
+        run: |
+          set -o pipefail
+          node apps/workers/src/run-issue.ts --repo "$REPO" --issue "$ISSUE" \
+            --daily-budget "$DAILY_BUDGET" --actor "$GITHUB_ACTOR" \
+            --report report.md --audit audit-log.json
+          cat report.md >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Keep the audit log
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: factory-run-${{ github.run_number }}
+          path: |
+            report.md
+            audit-log.json
+          if-no-files-found: ignore
