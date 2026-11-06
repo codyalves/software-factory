@@ -16,3 +16,5 @@
 # Triage rules and the labeled set they are scored against.
 /packages/domain/src/triage.ts                @codyalves
 /evals/                                       @codyalves
+# The implement-and-gate rules: what passes, and the built-in gates.
+/packages/domain/src/delivery.ts              @codyalves

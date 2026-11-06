@@ -12,6 +12,7 @@ interface RequirementTable {
   title: string;
   body: string;
   risk_level: ColumnType<'low' | 'medium' | 'high' | null, never, 'low' | 'medium' | 'high'>;
+  criteria: ColumnType<unknown, string | undefined, string>;
   created_at: Generated<Date>;
 }
 
@@ -20,6 +21,10 @@ interface RunTable {
   requirement_id: string;
   state: RunState;
   implement_attempts: Generated<number>;
+  base_sha: string | null;
+  branch: string | null;
+  head_sha: string | null;
+  budget_usd: ColumnType<string, never, never>;
   created_at: Generated<Date>;
   updated_at: ColumnType<Date, never, Date>;
 }
@@ -50,8 +55,30 @@ interface StepTable {
   result: ColumnType<unknown, string | null, string | null>;
   failure_class: FailureClass | null;
   finished_at: Date | null;
+  consumed_at: ColumnType<Date | null, never, Date>;
   created_at: Generated<Date>;
   updated_at: Generated<Date>;
+}
+
+interface GateResultTable {
+  id: Generated<string>;
+  step_id: string;
+  run_id: string | null;
+  attempt: number | null;
+  gate: string;
+  passed: boolean;
+  summary: string;
+  details: Generated<string>;
+  artifact_sha: string | null;
+  created_at: Generated<Date>;
+}
+
+interface TraceLinkTable {
+  requirement_id: string;
+  criterion_id: string;
+  test_id: string;
+  commit_sha: string;
+  created_at: Generated<Date>;
 }
 
 interface StepAttemptTable {
@@ -109,6 +136,8 @@ export interface Database {
   step_attempt: StepAttemptTable;
   outbox: OutboxTable;
   cost_ledger: CostLedgerTable;
+  gate_result: GateResultTable;
+  trace_link: TraceLinkTable;
   factory_control: FactoryControlTable;
 }
 

@@ -18,6 +18,10 @@ COPY packages/decisions/package.json packages/decisions/
 RUN pnpm install --frozen-lockfile --prod
 
 FROM node:26-slim
+# Workers clone target repositories and run their gates.
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends git ca-certificates \
+ && rm -rf /var/lib/apt/lists/*
 ARG ENTRY
 ENV NODE_ENV=production \
     FACTORY_ENTRY=${ENTRY}
@@ -27,5 +31,6 @@ COPY db ./db
 COPY apps ./apps
 COPY packages ./packages
 COPY prompts ./prompts
+COPY gates ./gates
 USER node
 CMD ["sh", "-c", "exec node \"$FACTORY_ENTRY\""]

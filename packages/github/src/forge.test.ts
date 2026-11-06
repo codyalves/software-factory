@@ -118,3 +118,58 @@ describe('githubRequest errors', () => {
     expect(error).toMatchObject({ retryable: true });
   });
 });
+
+describe('GitHubForge.openPullRequest', () => {
+  const PULLS = '/repos/codyalves/target/pulls';
+  const draft = {
+    repo: 'codyalves/target',
+    head: 'factory/7-abcd1234',
+    base: 'main',
+    title: 'Footer shows last year',
+    body: 'Closes #7.',
+  };
+  const existing = `GET ${PULLS}?state=open&head=codyalves%3Afactory%2F7-abcd1234`;
+
+  it('opens the pull request from the factory branch', async () => {
+    const github = fakeGitHub({ [`POST ${PULLS}`]: () => json({ number: 12, html_url: 'pr-12' }, 201) });
+
+    const result = await new GitHubForge({ auth, fetch: github.fetch }).openPullRequest({
+      ...draft,
+      mayAlreadyExist: false,
+    });
+
+    expect(result).toEqual({ number: 12, url: 'pr-12', reused: false });
+    expect(github.requests[0]?.body).toEqual({
+      title: draft.title,
+      head: draft.head,
+      base: 'main',
+      body: 'Closes #7.',
+    });
+  });
+
+  it('on a retry, returns the pull request an earlier attempt opened', async () => {
+    const github = fakeGitHub({ [existing]: () => json([{ number: 12, html_url: 'pr-12' }]) });
+
+    const result = await new GitHubForge({ auth, fetch: github.fetch }).openPullRequest({
+      ...draft,
+      mayAlreadyExist: true,
+    });
+
+    expect(result).toEqual({ number: 12, url: 'pr-12', reused: true });
+    expect(github.requests.map((r) => r.method)).toEqual(['GET']);
+  });
+
+  it('treats "already exists" as success when the pull request is found', async () => {
+    const github = fakeGitHub({
+      [`POST ${PULLS}`]: () => json({ message: 'A pull request already exists' }, 422),
+      [existing]: () => json([{ number: 12, html_url: 'pr-12' }]),
+    });
+
+    const result = await new GitHubForge({ auth, fetch: github.fetch }).openPullRequest({
+      ...draft,
+      mayAlreadyExist: false,
+    });
+
+    expect(result).toEqual({ number: 12, url: 'pr-12', reused: true });
+  });
+});

@@ -141,6 +141,47 @@ describe.skipIf(!TEST_DATABASE_URL)('outbox relay', () => {
     ]);
   });
 
+  it('opens a queued pull request through the forge', async () => {
+    await using t = await createTestDatabase();
+    const created = await new RunStore(t.db).createFromIssue(
+      { repo: 'codyalves/target', number: 7, title: 't', body: '', labels: ['factory'] },
+      'github',
+      'd-pr',
+    );
+    if (created.outcome !== 'created') throw new Error('expected a run');
+    await enqueueOutbox(t.db, created.runId, 'pull_request.open', {
+      repo: 'codyalves/target',
+      head: 'factory/7-abcd1234',
+      base: 'main',
+      title: 'Footer shows last year',
+      body: 'Closes #7.',
+    });
+    const opened: unknown[] = [];
+    const forge = {
+      name: 'fake',
+      comment: async () => ({ url: '', reused: false }),
+      openPullRequest: async (pr: unknown) => {
+        opened.push(pr);
+        return { number: 12, url: 'pr-12', reused: false };
+      },
+      mergePullRequest: async () => {},
+    };
+
+    expect(await deliverNextOutbox(new OutboxRelay(t.db, instant), forge)).toMatch(
+      /pull_request.open\) sent$/,
+    );
+    expect(opened).toEqual([
+      {
+        repo: 'codyalves/target',
+        head: 'factory/7-abcd1234',
+        base: 'main',
+        title: 'Footer shows last year',
+        body: 'Closes #7.',
+        mayAlreadyExist: false,
+      },
+    ]);
+  });
+
   it('fails a malformed message without calling GitHub', async () => {
     await using t = await createTestDatabase();
     await queueComment(t, { issueNumber: 'not a number' });
