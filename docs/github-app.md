@@ -55,3 +55,18 @@ Outside Docker, `GITHUB_APP_PRIVATE_KEY_FILE=/path/to/key.pem` works too.
 
 If the key ever leaks: the app's settings page → **Private keys** → delete it
 and generate a new one.
+
+## Using the App from GitHub Actions
+
+The `factory-run` workflow reads the App from two repository secrets
+(Settings → Secrets and variables → Actions). GitHub does not allow secret
+names that start with `GITHUB_`, so they are named:
+
+| Secret | Value |
+| --- | --- |
+| `FACTORY_APP_ID` | The App ID shown at the top of the App's settings page |
+| `FACTORY_APP_PRIVATE_KEY` | The whole `.pem` file, including the `BEGIN` and `END` lines |
+
+The workflow passes them to the factory as `GITHUB_APP_ID` and
+`GITHUB_APP_PRIVATE_KEY`. Install the App on the target repository as well
+as this one.
