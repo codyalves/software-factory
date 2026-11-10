@@ -49,11 +49,13 @@ jobs:
           --health-interval 5s
           --health-timeout 5s
           --health-retries 10
+    # Secret names cannot start with GITHUB_, so the app's secrets are
+    # FACTORY_APP_*; the factory itself reads GITHUB_APP_* from its env.
     env:
       DATABASE_URL: postgres://factory:factory@localhost:5432/factory
       ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
-      GITHUB_APP_ID: ${{ secrets.GITHUB_APP_ID }}
-      GITHUB_APP_PRIVATE_KEY: ${{ secrets.GITHUB_APP_PRIVATE_KEY }}
+      GITHUB_APP_ID: ${{ secrets.FACTORY_APP_ID }}
+      GITHUB_APP_PRIVATE_KEY: ${{ secrets.FACTORY_APP_PRIVATE_KEY }}
       IMPLEMENT_ATTEMPT_BUDGET_USD: ${{ inputs.attempt_budget }}
     steps:
       - uses: actions/checkout@v7
@@ -69,8 +71,8 @@ jobs:
         run: |
           missing=""
           [ -n "$ANTHROPIC_API_KEY" ] || missing="$missing ANTHROPIC_API_KEY"
-          [ -n "$GITHUB_APP_ID" ] || missing="$missing GITHUB_APP_ID"
-          [ -n "$GITHUB_APP_PRIVATE_KEY" ] || missing="$missing GITHUB_APP_PRIVATE_KEY"
+          [ -n "$GITHUB_APP_ID" ] || missing="$missing FACTORY_APP_ID"
+          [ -n "$GITHUB_APP_PRIVATE_KEY" ] || missing="$missing FACTORY_APP_PRIVATE_KEY"
           if [ -n "$missing" ]; then
             echo "Missing repository secrets:$missing (see docs/github-app.md)" | tee -a "$GITHUB_STEP_SUMMARY"
             exit 1
