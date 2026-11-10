@@ -59,3 +59,14 @@ describe('GitHubAppAuth', () => {
     expect(github.requests[0]?.authorization).toMatch(/^Bearer ey/);
   });
 });
+
+describe('GitHubAppAuth.botLogin', () => {
+  it('is the App slug as a bot login, looked up once', async () => {
+    const github = fakeGitHub({ 'GET /app': () => json({ slug: 'cody-software-factory' }) });
+    const auth = new GitHubAppAuth({ appId: '1', privateKey, fetch: github.fetch, now: () => NOW });
+
+    expect(await auth.botLogin()).toBe('cody-software-factory[bot]');
+    expect(await auth.botLogin()).toBe('cody-software-factory[bot]');
+    expect(github.requests).toHaveLength(1);
+  });
+});

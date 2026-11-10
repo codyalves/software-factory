@@ -51,6 +51,9 @@ jobs:
       - name: Type-check
         run: pnpm typecheck
 
+      - name: Install Chromium for the tester's tests
+        run: pnpm --filter @factory/tester exec playwright install --with-deps chromium
+
       - name: Test (unit + Postgres integration)
         run: pnpm test --reporter=default --reporter=junit --outputFile.junit=test-results/junit.xml
         env:

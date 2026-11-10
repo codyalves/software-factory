@@ -34,7 +34,13 @@ export function isSignatureValid(
 interface IssuesEvent {
   action?: string;
   label?: { name?: string };
-  issue?: { number?: number; title?: string; body?: string | null; labels?: { name?: string }[] };
+  issue?: {
+    number?: number;
+    title?: string;
+    body?: string | null;
+    labels?: { name?: string }[];
+    user?: { login?: string } | null;
+  };
   repository?: { full_name?: string };
 }
 
@@ -69,5 +75,6 @@ export function parseIssueEvent(eventName: string | undefined, body: Uint8Array)
     title: issue.title ?? '',
     body: issue.body ?? '',
     labels,
+    ...(issue.user?.login ? { author: issue.user.login } : {}),
   };
 }

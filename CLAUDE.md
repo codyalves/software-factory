@@ -37,6 +37,7 @@ imports include the `.ts` extension. Use `import type` for types.
 - `apps/api`: Fastify. Signed GitHub webhook intake, read routes, `/admin` (bearer `ADMIN_TOKEN`)
 - `apps/orchestrator`: the only writer of run state. Drain loops, outbox relay, lease reaper
 - `apps/workers`: claim steps from the queue and run handlers: triage, implement, gate
+- `apps/tester`: crawls the target, confirms findings with Playwright tests, files them (`docs/tester.md`)
 - `packages/domain`: pure logic. State machine, audit chain, retry policy, triage rules
 - `packages/db`: Kysely stores, migrator, step queue, outbox
 - `packages/decisions`: decision engines (Claude via structured outputs), prompt loading
@@ -71,7 +72,10 @@ imports include the `.ts` extension. Use `import type` for types.
 8. **Implementers never commit, push or judge.** The worker commits what an
    implementer leaves; gates in a fresh clone decide. Gate commands come from
    `gates/targets.json` here, never from the target repo.
-9. **No secrets in the repo, logs or audit payloads.** Config comes from env
+9. **A tester finding is a failing test.** Filed only if it failed 3 of 3
+   runs; trusted only from the factory's own App; committed before the
+   implementer starts and protected (`tests/regressions/`).
+10. **No secrets in the repo, logs or audit payloads.** Config comes from env
    and is validated with Zod at startup.
 
 ## Protected paths (CODEOWNERS)
@@ -79,7 +83,8 @@ imports include the `.ts` extension. Use `import type` for types.
 Changes to these need the owner's review: `gates/`, `prompts/`,
 `db/migrations/`, `.github/`, `biome.json`, `CLAUDE.md`,
 `packages/domain/src/audit-chain.ts`, `packages/domain/src/run-state-machine.ts`,
-`packages/domain/src/triage.ts`, `packages/domain/src/delivery.ts`, `evals/`, and the spending controls
+`packages/domain/src/triage.ts`, `packages/domain/src/delivery.ts`, `packages/domain/src/findings.ts`,
+`apps/tester/src/repro.ts`, `evals/`, and the spending controls
 (`packages/db/src/factory-control.ts`, `packages/decisions/src/pricing.ts`).
 Prompts are versioned by file name and content hash; a meaningfully different
 prompt gets a new file (`triage.v2.md`), not an edit.

@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { AuditStore, OutboxRelay, RunStore, StepQueue } from '@factory/db';
 import { createTestDatabase, TEST_DATABASE_URL, type TestDatabase } from '@factory/db/testing';
+import { findingIssue } from '@factory/domain';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import {
   applyNextGateResult,
@@ -113,11 +114,19 @@ describe.skipIf(!TEST_DATABASE_URL)('implement-and-gate loop', () => {
     t: TestDatabase,
     implementer: Implementer,
     body = '- The footer shows the current year',
+    options: { author?: string; target?: TargetConfig } = {},
   ) {
     const runs = new RunStore(t.db);
     const queue = new StepQueue(t.db);
     const created = await runs.createFromIssue(
-      { repo: REPO, number: 7, title: 'Footer shows last year', body, labels: ['factory'] },
+      {
+        repo: REPO,
+        number: 7,
+        title: 'Footer shows last year',
+        body,
+        labels: ['factory'],
+        ...(options.author ? { author: options.author } : {}),
+      },
       'github',
       'delivery-1',
     );
@@ -129,7 +138,11 @@ describe.skipIf(!TEST_DATABASE_URL)('implement-and-gate loop', () => {
     const handlers = createHandlers({
       runs,
       decisionModel: null,
-      delivery: { targets: { [REPO]: target }, access: localRepoAccess({ [REPO]: bare }), implementer },
+      delivery: {
+        targets: { [REPO]: options.target ?? target },
+        access: localRepoAccess({ [REPO]: bare }),
+        implementer,
+      },
     });
     const work = async () => {
       const step = await queue.claim('worker-1', Object.keys(handlers), 120_000);
@@ -348,6 +361,8 @@ describe.skipIf(!TEST_DATABASE_URL)('implement-and-gate loop', () => {
         return { number: 12, url: 'https://github.com/codyalves/target/pull/12', reused: false };
       },
       mergePullRequest: async () => {},
+      createIssue: async () => ({ number: 1, url: 'issue-1', reused: false }),
+      openFindings: async () => [],
     };
     const relay = new OutboxRelay(t.db);
     const lines: string[] = [];
@@ -410,5 +425,107 @@ describe.skipIf(!TEST_DATABASE_URL)('implement-and-gate loop', () => {
     });
 
     expect(outcome).toEqual({ rounds: 1, finished: false });
+  });
+
+  describe('regression tests from the tester', () => {
+    const BOT = 'cody-software-factory[bot]';
+    const regression = {
+      path: 'tests/regressions/footer-year-0a1b2c3d.spec.ts',
+      content: [
+        "import assert from 'node:assert/strict';",
+        "import { test } from 'node:test';",
+        "import { footerYear } from '../../year.js';",
+        '',
+        "test('AC-1: the footer shows the current year', () => {",
+        '  assert.equal(footerYear(), new Date().getFullYear());',
+        '});',
+        '',
+      ].join('\n'),
+    };
+    const finding = {
+      category: 'page_error' as const,
+      page: '/',
+      summary: 'stale year',
+      signature: 'stale year',
+      severity: 'medium' as const,
+      evidence: 'Footer shows 2025',
+    };
+    const body = findingIssue(finding, regression, { runs: 3, failures: 3 }).body;
+    // Runs the regression tests too, as the real target's e2e gate does.
+    const regressionTarget: TargetConfig = {
+      ...target,
+      gates: { ...target.gates, regressions: ['node', '--test', 'tests/regressions/*.spec.ts'] },
+      protectedPaths: [...target.protectedPaths, 'tests/regressions/**'],
+    };
+
+    it('commits the test first, and the fix has to make it pass as written', async () => {
+      await using t = await createTestDatabase();
+      const implementer = scripted([fixYear]);
+      const { runs, runId, attempt } = await setup(t, implementer, body, {
+        author: BOT,
+        target: regressionTarget,
+      });
+
+      expect(await startNextImplementation(runs, { trustedAuthors: [BOT] })).toMatch(/moved to Implementing/);
+      // The implementer works on a branch that already holds the failing test.
+      expect(await attempt()).toMatch(/moved to Reviewing/);
+
+      const branch = `factory/7-${runId.slice(0, 8)}`;
+      expect(git(bare, 'log', '--format=%s', branch).split('\n').slice(0, 2)).toEqual([
+        'Attempt 1 at #7: Footer shows last year',
+        "Add the tester's regression test for #7",
+      ]);
+      expect(git(bare, 'show', `${branch}:${regression.path}`)).toBe(regression.content);
+      const trace = await t.db.selectFrom('trace_link').select(['criterion_id', 'test_id']).execute();
+      expect(trace).toEqual([{ criterion_id: 'AC-1', test_id: `${regression.path}:5` }]);
+      const types = (await new AuditStore(t.db).readAll()).map((e) => e.type);
+      expect(types).toContain('plan.regression_test');
+    });
+
+    it('fails an attempt that edits the regression test instead of fixing the code', async () => {
+      await using t = await createTestDatabase();
+      const weaken: Script = async ({ dir }) => {
+        await writeFile(
+          join(dir, regression.path),
+          regression.content.replace('new Date().getFullYear()', '2025'),
+        );
+      };
+      const { runs, runId, attempt } = await setup(t, scripted([weaken]), body, {
+        author: BOT,
+        target: regressionTarget,
+      });
+      await startNextImplementation(runs, { trustedAuthors: [BOT] });
+
+      expect(await attempt()).toMatch(/moved to Implementing/);
+      const failed = await t.db
+        .selectFrom('gate_result')
+        .select(['gate', 'details'])
+        .where('run_id', '=', runId)
+        .where('passed', '=', false)
+        .execute();
+      expect(failed.map((g) => g.gate)).toEqual(['protected_paths']);
+      expect(failed[0]?.details).toContain(regression.path);
+    });
+
+    it('ignores an embedded test from anyone but the factory', async () => {
+      await using t = await createTestDatabase();
+      const { runs, runId } = await setup(t, scripted([fixYear]), body, {
+        author: 'someone-else',
+        target: regressionTarget,
+      });
+
+      await startNextImplementation(runs, { trustedAuthors: [BOT] });
+
+      const { regression: stored } = await t.db
+        .selectFrom('requirement')
+        .select('regression')
+        .executeTakeFirstOrThrow();
+      expect(stored).toBeNull();
+      const ignored = (await new AuditStore(t.db).readAll()).find(
+        (e) => e.type === 'plan.regression_test_ignored',
+      );
+      expect(JSON.parse(ignored?.payload ?? '{}')).toMatchObject({ author: 'someone-else' });
+      expect(runId).toBeTruthy();
+    });
   });
 });

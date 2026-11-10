@@ -17,6 +17,14 @@ const pullRequest = z.object({
   body: z.string(),
 });
 
+const newIssue = z.object({
+  repo: z.string().regex(/^[\w.-]+\/[\w.-]+$/),
+  title: z.string().min(1).max(256),
+  body: z.string().max(60_000),
+  labels: z.array(z.string()).max(10),
+  fingerprint: z.string().regex(/^[0-9a-f]{16}$/),
+});
+
 class MalformedMessage extends Error {}
 
 /** Sends one outbox message through the forge, by kind. */
@@ -40,6 +48,13 @@ export function createOutboxSender(forge: ForgeAdapter): (message: OutboxMessage
           throw new MalformedMessage(`malformed pull_request.open payload: ${parsed.error.message}`);
         }
         return forge.openPullRequest({ ...parsed.data, mayAlreadyExist: message.attempts > 0 });
+      }
+      case 'issue.create': {
+        const parsed = newIssue.safeParse(message.payload);
+        if (!parsed.success) {
+          throw new MalformedMessage(`malformed issue.create payload: ${parsed.error.message}`);
+        }
+        return forge.createIssue({ ...parsed.data, mayAlreadyExist: message.attempts > 0 });
       }
       default:
         throw new MalformedMessage(`no sender for outbox kind ${message.kind}`);

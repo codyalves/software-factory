@@ -1,3 +1,5 @@
+import { mkdir, writeFile } from 'node:fs/promises';
+import { dirname, join } from 'node:path';
 import type { RunIssue } from '@factory/db';
 import { z } from 'zod';
 import { runGates, type TargetConfig } from '../gates.ts';
@@ -54,8 +56,26 @@ export function createImplementHandler(
 
     const workspace = await Workspace.clone(remote, target.baseBranch, signal);
     try {
-      const baseSha = await workspace.headSha();
+      let baseSha = await workspace.headSha();
       const started = await workspace.useBranch(branch);
+      if (started === 'created' && issue.regression) {
+        // The tester's regression test goes in first, as its own commit, and
+        // becomes the base the attempt is judged against: protected-paths
+        // then catches any change the implementer makes to it.
+        await mkdir(dirname(join(workspace.dir, issue.regression.path)), { recursive: true });
+        await writeFile(join(workspace.dir, issue.regression.path), issue.regression.content);
+        const seeded = await workspace.commitAll(
+          `Add the tester's regression test for #${issue.issueNumber}`,
+          {
+            'Factory-Run': step.runId,
+            'Factory-Regression': issue.regression.path,
+          },
+        );
+        if (seeded) {
+          await workspace.push(branch);
+          baseSha = seeded;
+        }
+      }
       const { summary } = await deps.implementer.implement(
         {
           dir: workspace.dir,

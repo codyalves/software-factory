@@ -141,6 +141,44 @@ describe.skipIf(!TEST_DATABASE_URL)('outbox relay', () => {
     ]);
   });
 
+  it('files a tester issue that belongs to no run, and records it in the audit chain', async () => {
+    await using t = await createTestDatabase();
+    await enqueueOutbox(t.db, null, 'issue.create', {
+      repo: 'codyalves/target',
+      title: 'Broken link on /pricing',
+      body: 'body',
+      labels: ['found-by-tester'],
+      fingerprint: '0123456789abcdef',
+    });
+    const created: unknown[] = [];
+    const forge = {
+      name: 'fake',
+      comment: async () => ({ url: '', reused: false }),
+      openPullRequest: async () => ({ number: 1, url: '', reused: false }),
+      mergePullRequest: async () => {},
+      openFindings: async () => [],
+      createIssue: async (issue: unknown) => {
+        created.push(issue);
+        return { number: 9, url: 'issue-9', reused: false };
+      },
+    };
+
+    expect(await deliverNextOutbox(new OutboxRelay(t.db, instant), forge)).toMatch(/issue.create\) sent$/);
+    expect(created).toEqual([
+      {
+        repo: 'codyalves/target',
+        title: 'Broken link on /pricing',
+        body: 'body',
+        labels: ['found-by-tester'],
+        fingerprint: '0123456789abcdef',
+        mayAlreadyExist: false,
+      },
+    ]);
+    const sent = (await new AuditStore(t.db).readAll()).find((e) => e.type === 'outbox.sent');
+    expect(sent?.runId).toBeNull();
+    expect(await new AuditStore(t.db).verifyInDatabase()).toEqual([]);
+  });
+
   it('opens a queued pull request through the forge', async () => {
     await using t = await createTestDatabase();
     const created = await new RunStore(t.db).createFromIssue(
@@ -165,6 +203,8 @@ describe.skipIf(!TEST_DATABASE_URL)('outbox relay', () => {
         return { number: 12, url: 'pr-12', reused: false };
       },
       mergePullRequest: async () => {},
+      createIssue: async () => ({ number: 1, url: 'issue-1', reused: false }),
+      openFindings: async () => [],
     };
 
     expect(await deliverNextOutbox(new OutboxRelay(t.db, instant), forge)).toMatch(

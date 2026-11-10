@@ -12,6 +12,7 @@ import {
   type GateResult,
   gatingOutcome,
   higherTier,
+  parseRepro,
   RISK_TIERS,
   type RiskTier,
   type TraceLink,
@@ -55,10 +56,40 @@ function enqueueImplement(
  * commits and the audit log can name them) and queues the first attempt. An
  * issue with no criteria goes to a person: there is nothing to verify against.
  */
-export async function startNextImplementation(runs: Runs): Promise<string | null> {
+export async function startNextImplementation(
+  runs: Runs,
+  options: {
+    /**
+     * Logins whose issues may carry a regression test the implementer cannot
+     * change: the factory's own App. Anyone else's embedded test is ignored.
+     */
+    readonly trustedAuthors?: readonly string[];
+  } = {},
+): Promise<string | null> {
   const run = await runs.advanceNextWith('Planning', async (trx, run) => {
     const issue = await issueOf(runs, run.id);
     const criteria = extractCriteria(issue.body);
+    const repro = parseRepro(issue.body);
+    if (repro) {
+      const trusted = issue.author !== null && (options.trustedAuthors ?? []).includes(issue.author);
+      if (trusted) {
+        await trx
+          .updateTable('requirement')
+          .set({ regression: JSON.stringify(repro) })
+          .where('id', '=', issue.requirementId)
+          .execute();
+        await appendAuditEvent(trx, run.id, 'plan.regression_test', {
+          path: repro.path,
+          author: issue.author,
+        });
+      } else {
+        await appendAuditEvent(trx, run.id, 'plan.regression_test_ignored', {
+          path: repro.path,
+          author: issue.author,
+          reason: 'only the factory may attach a protected regression test',
+        });
+      }
+    }
     if (criteria.length === 0) {
       await enqueueOutbox(trx, run.id, 'issue.comment', {
         repo: issue.repo,

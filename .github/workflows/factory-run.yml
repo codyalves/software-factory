@@ -82,6 +82,8 @@ jobs:
         run: |
           pnpm install --frozen-lockfile
           npm install -g @anthropic-ai/claude-code@2.1.319
+          # System libraries for the e2e gate's Chromium; the gate installs the browser itself.
+          pnpm --filter @factory/tester exec playwright install-deps chromium
 
       - name: Run the factory on ${{ inputs.repo }}#${{ inputs.issue }}
         env:

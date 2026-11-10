@@ -203,3 +203,57 @@ describe('GitHubForge.issue', () => {
     );
   });
 });
+
+describe('GitHubForge findings', () => {
+  const FP = '0123456789abcdef';
+  const body = `text\n<!-- software-factory:finding fingerprint=${FP} -->`;
+  const list = 'GET /repos/codyalves/target/issues?state=open&labels=found-by-tester&per_page=100&page=1';
+  const draft = {
+    repo: 'codyalves/target',
+    title: 'Broken link on /pricing',
+    body,
+    labels: ['found-by-tester'],
+    fingerprint: FP,
+  };
+
+  it('lists open findings by fingerprint, skipping pull requests and unmarked issues', async () => {
+    const github = fakeGitHub({
+      [list]: () =>
+        json([
+          { number: 4, html_url: 'issue-4', body },
+          { number: 5, html_url: 'issue-5', body: 'no marker' },
+          { number: 6, html_url: 'pr-6', body, pull_request: {} },
+        ]),
+    });
+
+    expect(await new GitHubForge({ auth, fetch: github.fetch }).openFindings('codyalves/target')).toEqual([
+      { number: 4, url: 'issue-4', fingerprint: FP },
+    ]);
+  });
+
+  it('files a finding as an issue with its labels', async () => {
+    const github = fakeGitHub({
+      'POST /repos/codyalves/target/issues': () => json({ number: 9, html_url: 'issue-9' }, 201),
+    });
+
+    const created = await new GitHubForge({ auth, fetch: github.fetch }).createIssue({
+      ...draft,
+      mayAlreadyExist: false,
+    });
+
+    expect(created).toEqual({ number: 9, url: 'issue-9', reused: false });
+    expect(github.requests[0]?.body).toEqual({ title: draft.title, body, labels: ['found-by-tester'] });
+  });
+
+  it('on a retry, returns the issue an earlier attempt filed instead of filing twice', async () => {
+    const github = fakeGitHub({ [list]: () => json([{ number: 4, html_url: 'issue-4', body }]) });
+
+    const created = await new GitHubForge({ auth, fetch: github.fetch }).createIssue({
+      ...draft,
+      mayAlreadyExist: true,
+    });
+
+    expect(created).toEqual({ number: 4, url: 'issue-4', reused: true });
+    expect(github.requests.map((r) => r.method)).toEqual(['GET']);
+  });
+});

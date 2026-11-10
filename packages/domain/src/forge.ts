@@ -5,6 +5,8 @@ export interface ForgeIssue {
   readonly title: string;
   readonly body: string;
   readonly labels: readonly string[];
+  /** Login of whoever opened it, when known. Decides whether an embedded regression test is trusted. */
+  readonly author?: string;
 }
 
 export interface IssueComment {
@@ -28,6 +30,23 @@ export interface PullRequestDraft {
   readonly mayAlreadyExist: boolean;
 }
 
+export interface IssueDraft {
+  readonly repo: string;
+  readonly title: string;
+  readonly body: string;
+  readonly labels: readonly string[];
+  /** The finding's fingerprint; the body carries it too, so a retry can find the issue. */
+  readonly fingerprint: string;
+  /** True on a retry, when an earlier attempt may have created it before failing. */
+  readonly mayAlreadyExist: boolean;
+}
+
+export interface OpenFinding {
+  readonly number: number;
+  readonly url: string;
+  readonly fingerprint: string;
+}
+
 /**
  * Everything the factory needs from a git host. GitHub is the first
  * implementation; GitLab can follow without touching the orchestrator.
@@ -38,4 +57,8 @@ export interface ForgeAdapter {
   /** Opens a pull request, or returns the one already open for `head` on a retry. */
   openPullRequest(pr: PullRequestDraft): Promise<{ number: number; url: string; reused: boolean }>;
   mergePullRequest(repo: string, pullNumber: number): Promise<void>;
+  /** Files an issue, or returns the open one with the same fingerprint on a retry. */
+  createIssue(issue: IssueDraft): Promise<{ number: number; url: string; reused: boolean }>;
+  /** Open issues the tester filed, by fingerprint, for deduplication. */
+  openFindings(repo: string): Promise<OpenFinding[]>;
 }

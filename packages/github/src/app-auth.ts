@@ -41,6 +41,7 @@ export class GitHubAppAuth {
   readonly #options: Required<Omit<GitHubAppAuthOptions, 'appId' | 'privateKey'>> & GitHubAppAuthOptions;
   readonly #installations = new Map<string, number>();
   readonly #tokens = new Map<number, { token: string; expiresAt: number }>();
+  #botLogin: Promise<string> | undefined;
 
   constructor(options: GitHubAppAuthOptions) {
     this.#options = {
@@ -49,6 +50,17 @@ export class GitHubAppAuth {
       now: Date.now,
       ...options,
     };
+  }
+
+  /**
+   * The login the App acts as, e.g. "cody-software-factory[bot]". Issues by
+   * this author are the factory's own; their embedded regression tests are trusted.
+   */
+  async botLogin(): Promise<string> {
+    this.#botLogin ??= githubRequest<{ slug: string }>(this.#appRequest(), 'GET', '/app').then(
+      ({ slug }) => `${slug}[bot]`,
+    );
+    return this.#botLogin;
   }
 
   /** A token that can act on `repo` (owner/name). */

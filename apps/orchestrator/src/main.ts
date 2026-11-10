@@ -39,12 +39,13 @@ const privateKeyPem =
   config.GITHUB_APP_PRIVATE_KEY ??
   (config.GITHUB_APP_PRIVATE_KEY_FILE ? readFileSync(config.GITHUB_APP_PRIVATE_KEY_FILE, 'utf8') : undefined);
 
-const forge =
+const auth =
   config.GITHUB_APP_ID && privateKeyPem
-    ? new GitHubForge({
-        auth: new GitHubAppAuth({ appId: config.GITHUB_APP_ID, privateKey: parsePrivateKey(privateKeyPem) }),
-      })
+    ? new GitHubAppAuth({ appId: config.GITHUB_APP_ID, privateKey: parsePrivateKey(privateKeyPem) })
     : null;
+const forge = auth ? new GitHubForge({ auth }) : null;
+// Only issues the factory's own App opened may carry a protected regression test.
+const trustedAuthors = auth ? [await auth.botLogin()] : [];
 
 console.info(`orchestrator started; outbox relay ${forge ? 'on' : 'off (no GitHub App configured)'}`);
 await Promise.all([
@@ -54,7 +55,7 @@ await Promise.all([
     next: () => applyNextTriageResult(runs, config.CONFIDENCE_THRESHOLD),
     ...loop,
   }),
-  runDrainLoop({ name: 'planning', next: () => startNextImplementation(runs), ...loop }),
+  runDrainLoop({ name: 'planning', next: () => startNextImplementation(runs, { trustedAuthors }), ...loop }),
   runDrainLoop({ name: 'implementation results', next: () => applyNextImplementation(runs), ...loop }),
   runDrainLoop({ name: 'gate results', next: () => applyNextGateResult(runs), ...loop }),
   forge
