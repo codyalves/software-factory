@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "dependencies": {
-    "@anthropic-ai/sdk": "1.3.0",
+    "@anthropic-ai/sdk": "1.6.0",
     "@factory/db": "workspace:*",
     "@factory/decisions": "workspace:*",
     "@factory/domain": "workspace:*",
