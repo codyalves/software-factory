@@ -5,7 +5,11 @@ import { createDb, FactoryControl, RunStore, StepQueue } from '@factory/db';
 import { ClaudeDecisionModel, loadPrompt } from '@factory/decisions';
 import { GitHubAppAuth, gitHubRepoAccess, parsePrivateKey } from '@factory/github';
 import { z } from 'zod';
-import { ClaudeCodeImplementer } from './claude-code-implementer.ts';
+import {
+  ClaudeCodeImplementer,
+  DEFAULT_ATTEMPT_BUDGET_USD,
+  DEFAULT_ESCALATE_AFTER,
+} from './claude-code-implementer.ts';
 import { loadTargets } from './gates.ts';
 import { createHandlers } from './handlers.ts';
 import { runSteps } from './step-runner.ts';
@@ -37,8 +41,8 @@ const config = z
     // The implementer: Claude Code, headless. Needs ANTHROPIC_API_KEY.
     IMPLEMENT_MODEL: z.string().default('claude-sonnet-5-5'),
     IMPLEMENT_FRONTIER_MODEL: z.string().default('claude-opus-5-5'),
-    IMPLEMENT_ESCALATE_AFTER: z.coerce.number().int().min(0).default(2),
-    IMPLEMENT_ATTEMPT_BUDGET_USD: z.coerce.number().positive().max(20).default(1.25),
+    IMPLEMENT_ESCALATE_AFTER: z.coerce.number().int().min(0).default(DEFAULT_ESCALATE_AFTER),
+    IMPLEMENT_ATTEMPT_BUDGET_USD: z.coerce.number().positive().max(20).default(DEFAULT_ATTEMPT_BUDGET_USD),
     IMPLEMENT_PROMPT: z
       .string()
       .regex(/^[\w.-]+$/)

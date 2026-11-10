@@ -42,7 +42,8 @@ imports include the `.ts` extension. Use `import type` for types.
 - `packages/decisions`: decision engines (Claude via structured outputs), prompt loading
 - `packages/github`: webhook verification, GitHub App auth, forge adapter
 - `db/migrations`: plain SQL, applied in name order
-- `prompts/`: versioned prompts; `gates/gates.yaml`: thresholds and merge policy;
+- `prompts/`: versioned prompts; `gates/gates.yaml`: the policy, split into enforced
+  (pinned to code by `policy.test.ts`) and planned;
   `gates/targets.json`: how each target repo is built and gated
 
 ## Rules that keep the factory trustworthy

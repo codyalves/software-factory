@@ -207,7 +207,7 @@ packages/
   db/                      Kysely stores and migrator
   github/                  webhook signature verification and parsing
 db/migrations/             SQL schema, including the audit chain functions
-gates/gates.yaml           gate thresholds and merge policy (CODEOWNERS-protected)
+gates/gates.yaml           policy: what is enforced (pinned to the code by a test) and what is planned
 prompts/                   versioned prompts (CODEOWNERS-protected)
 deploy/                    Dockerfile and docker compose stack
 docs/                      design and architecture decision records

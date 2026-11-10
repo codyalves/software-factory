@@ -1,54 +1,65 @@
 # Quality gates and merge policy. Protected by CODEOWNERS: agents can propose
-# changes here but a human approves them. Read by the orchestrator from M1.
+# changes here but a human approves them.
+#
+# Two sections, kept honest by apps/workers/src/policy.test.ts:
+#   enforced: what the factory does today. Each value is pinned to the code or
+#             database default that enforces it; if they disagree, CI fails.
+#   planned:  what the factory will do. Nothing here is enforced yet.
 
-version: 1
+version: 2
 
-iteration:
-  max_implement_attempts: 4        # then escalate to a human
-  escalate_to_frontier_after_failures: 2
+enforced:
+  iteration:
+    max_implement_attempts: 4               # run-state-machine.ts MAX_IMPLEMENT_ATTEMPTS; then a person takes over
+    escalate_to_frontier_after_failures: 2  # claude-code-implementer.ts: Sonnet, then Opus from attempt 3
 
-budget:
-  per_run_usd: 5.00
-  per_day_usd: 25.00
+  budget:
+    per_attempt_usd: 1.25    # Claude Code --max-budget-usd, IMPLEMENT_ATTEMPT_BUDGET_USD
+    per_run_usd: 5.00        # run.budget_usd default; checked before every new attempt
+    per_day_usd: 3.00        # factory_control.daily_budget_usd default; checked before every step
 
-gates:
-  build:
-    required: true
-    warnings_as_errors: true
-  unit_tests:
-    required: true
-  coverage:
-    minimum_line_percent: 70
-    may_not_decrease: true
-  integration_tests:
-    required: true
-  secret_scan:
-    required: true
-  dependency_scan:
-    fail_on_severity: high
-  ai_review:
-    required: true
-    reviewer_must_differ_from_implementer: true
-    can_override_failing_gate: false   # a reviewer verdict never turns a red gate green
-  traceability:
-    every_criterion_has_a_test: true
+  decision_layer:
+    confidence_threshold: 0.80   # below it, a triage answer takes its safe fallback
+    engine: claude-haiku-5-5     # structured outputs; prompts/triage.v3.md
 
-# Target app only: the site-plus-chatbot platform.
-chatbot_evals:
-  golden_set_per_demo_company: true
-  min_answer_accuracy: 0.90
-  require_citations: true
-  must_refuse_out_of_scope: true
-  forbid_unsourced_prices_or_policies: true
+  # Built-in gates, run on every attempt in a fresh clone (packages/domain/src/delivery.ts).
+  # Each target adds its own command gates (lint, typecheck, tests, build) in
+  # gates/targets.json. Every gate is required: one red gate fails the attempt.
+  gates:
+    - changes            # the attempt changed something
+    - protected_paths    # no CI, gate config, manifests or lockfiles touched
+    - secret_scan        # no credentials in added lines
+    - traceability       # every acceptance criterion is named by a test
 
-merge_policy:
-  auto_merge_risk_levels: [low]
-  always_require_approver_for_paths:
-    - gates/**
-    - prompts/**
-    - db/migrations/**
-    - .github/**
+  risk:
+    # Final risk is the higher of triage's prediction from the issue and what
+    # the diff touched (gates/targets.json riskPaths). Measurement only raises it.
+    predicted_by: triage
+    measured_from: diff
 
-decision_layer:
-  confidence_threshold: 0.80
-  default_engine: claude           # claude-haiku-5-5 via structured outputs; jev can be enabled per decision once logged outcomes exist
+  merge_policy:
+    # Every pull request waits for a person's approval. The factory never merges.
+    auto_merge_risk_levels: []
+
+planned:
+  gates:
+    coverage:
+      minimum_line_percent: 70
+      may_not_decrease: true
+    dependency_scan:
+      fail_on_severity: high
+    ai_review:
+      reviewer_must_differ_from_implementer: true
+      can_override_failing_gate: false   # a reviewer verdict never turns a red gate green
+  merge_policy:
+    auto_merge_risk_levels: [low]        # once low-risk work has a track record of no rollbacks
+  chatbot_evals:                         # target app, once the chatbot exists
+    golden_set_per_demo_company: true
+    min_answer_accuracy: 0.90
+    require_citations: true
+    must_refuse_out_of_scope: true
+    forbid_unsourced_prices_or_policies: true
+  learning:
+    # Lessons from escalations and review comments, proposed as changes to the
+    # target's CLAUDE.md through a pull request a person approves. Never automatic.
+    propose_conventions_from_reviews: true

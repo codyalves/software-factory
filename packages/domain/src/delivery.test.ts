@@ -5,8 +5,11 @@ import {
   type GateResult,
   gatingOutcome,
   globToRegExp,
+  higherTier,
   isTestFile,
+  measureRisk,
   protectedPathsGate,
+  SCOPE_LINE,
   secretScan,
   traceabilityGate,
 } from './delivery.ts';
@@ -177,5 +180,36 @@ describe('traceability', () => {
 
     expect(result).toMatchObject({ passed: false, summary: '1 of 2 criteria have no test' });
     expect(result.details).toContain('- AC-1: shows the year');
+  });
+});
+
+describe('measureRisk', () => {
+  const riskPaths = { high: ['db/migrations/**', '**/auth/**'], medium: ['lib/**'] };
+
+  it('is low when nothing risky was touched', () => {
+    expect(measureRisk(['app/components/footer.tsx'], riskPaths)).toEqual({ tier: 'low', reasons: [] });
+  });
+
+  it('takes the highest tier any changed path reaches, and says which paths', () => {
+    expect(measureRisk(['lib/copyright.ts', 'app/auth/session.ts', 'README.md'], riskPaths)).toEqual({
+      tier: 'high',
+      reasons: ['app/auth/session.ts matches **/auth/** (high)', 'lib/copyright.ts matches lib/** (medium)'],
+    });
+  });
+});
+
+describe('higherTier', () => {
+  it('keeps the riskier of two tiers', () => {
+    expect(higherTier('low', 'medium')).toBe('medium');
+    expect(higherTier('high', 'low')).toBe('high');
+    expect(higherTier('medium', 'medium')).toBe('medium');
+  });
+});
+
+describe('scope on returns', () => {
+  it('tells the next attempt to fix only what failed', () => {
+    const outcome = gatingOutcome([fail('unit_tests')], 1);
+
+    expect(outcome.next === 'Implementing' && outcome.feedback).toContain(SCOPE_LINE);
   });
 });

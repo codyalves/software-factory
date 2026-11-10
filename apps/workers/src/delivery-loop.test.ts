@@ -1,5 +1,5 @@
 import { execFileSync } from 'node:child_process';
-import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { AuditStore, OutboxRelay, RunStore, StepQueue } from '@factory/db';
@@ -26,6 +26,8 @@ const target: TargetConfig = {
   setup: [],
   gates: { unit_tests: ['node', '--test'] },
   protectedPaths: ['.github/**', 'package.json'],
+  // year.js is shared by every page in this pretend app.
+  riskPaths: { high: ['migrations/**'], medium: ['year.js'] },
   commandTimeoutMs: 60_000,
 };
 
@@ -223,6 +225,9 @@ describe.skipIf(!TEST_DATABASE_URL)('implement-and-gate loop', () => {
     expect(body).toContain('Closes #7.');
     expect(body).toContain('| AC-1 | The footer shows the current year | `year.test.js:4` |');
     expect(body).toContain('| traceability | passed');
+    // Not triaged in this test, so the risk is what the diff measured.
+    expect(body).toContain('**medium**. Predicted by triage: not triaged; measured from the diff: medium.');
+    expect(body).toContain('- `year.js matches year.js (medium)`');
 
     // Both implement attempts were metered against the run.
     const spend = await t.db.selectFrom('cost_ledger').select('usd').where('run_id', '=', runId).execute();
@@ -233,6 +238,44 @@ describe.skipIf(!TEST_DATABASE_URL)('implement-and-gate loop', () => {
     expect(types.filter((x) => x === 'gating.completed')).toHaveLength(2);
     expect(types).toContain('traceability.recorded');
     expect(await audit.verifyInDatabase()).toEqual([]);
+  });
+
+  it('raises the risk when the diff touches more than triage predicted', async () => {
+    await using t = await createTestDatabase();
+    const touchesMigration: Script = async (input) => {
+      await addTracedTest(input);
+      await mkdir(join(input.dir, 'migrations'));
+      await writeFile(
+        join(input.dir, 'migrations', '001_year.sql'),
+        'alter table site add column year int;\n',
+      );
+    };
+    const { runs, runId, attempt } = await setup(t, scripted([touchesMigration]));
+    await t.db.updateTable('requirement').set({ risk_level: 'low' }).execute();
+    await startNextImplementation(runs);
+
+    expect(await attempt()).toMatch(/moved to Reviewing/);
+
+    const { risk_level } = await t.db
+      .selectFrom('requirement')
+      .select('risk_level')
+      .executeTakeFirstOrThrow();
+    expect(risk_level).toBe('high');
+    const events = await new AuditStore(t.db).readAll();
+    const raised = events.find((e) => e.type === 'risk.raised');
+    expect(JSON.parse(raised?.payload ?? '{}')).toEqual({
+      from: 'low',
+      to: 'high',
+      reasons: ['migrations/001_year.sql matches migrations/** (high)', 'year.js matches year.js (medium)'],
+    });
+    const pr = await t.db
+      .selectFrom('outbox')
+      .select('payload')
+      .where('run_id', '=', runId)
+      .executeTakeFirstOrThrow();
+    expect((pr.payload as { body: string }).body).toContain(
+      '**high**. Predicted by triage: low; measured from the diff: high.',
+    );
   });
 
   it('escalates with a comment once the attempts are spent', async () => {

@@ -45,6 +45,19 @@ bounded) as feedback; after `MAX_IMPLEMENT_ATTEMPTS` (4) or once the run's
 spend reaches its budget, the run escalates with a comment. No model output,
 including a future AI review, can turn a red gate green.
 
+**Returns carry a scope.** Feedback to the next attempt lists the failed
+gates with their evidence, plus a scope line: fix only those causes and keep
+the rest of the attempt as it is. Without it, a retry grows into a diff
+nobody asked for.
+
+**Risk is measured, not only predicted.** Triage predicts risk from the
+issue text before any code exists, and a model's prediction is the one input
+the model can influence. Each gate run also measures risk from the paths the
+diff touched (`riskPaths` in `gates/targets.json`: migrations, auth,
+payments, shared content). The run's risk is the higher of the two;
+measurement can only raise it, and a raise is a `risk.raised` audit event
+and shows in the PR.
+
 **Everything is on record.** Each gate verdict is a `gate_result` row (with
 the output) and part of a `gating.completed` audit event. On success the
 orchestrator writes `trace_link` rows (requirement, criterion, test, commit)

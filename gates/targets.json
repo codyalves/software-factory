@@ -19,6 +19,18 @@
       "next.config.*",
       "CLAUDE.md"
     ],
+    "riskPaths": {
+      "high": [
+        "**/migrations/**",
+        "**/auth/**",
+        "**/*auth*.*",
+        "middleware.ts",
+        "**/payments/**",
+        "**/billing/**",
+        ".env*"
+      ],
+      "medium": ["content/company.json", "lib/company.ts", "app/layout.tsx", "app/api/**"]
+    },
     "commandTimeoutMs": 600000
   }
 }

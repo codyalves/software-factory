@@ -28,7 +28,11 @@ import {
 } from '../../orchestrator/src/delivery.ts';
 import { deliverNextOutbox } from '../../orchestrator/src/outbox.ts';
 import { applyNextTriageResult, startNextTriage } from '../../orchestrator/src/triage.ts';
-import { ClaudeCodeImplementer } from './claude-code-implementer.ts';
+import {
+  ClaudeCodeImplementer,
+  DEFAULT_ATTEMPT_BUDGET_USD,
+  DEFAULT_ESCALATE_AFTER,
+} from './claude-code-implementer.ts';
 import { driveRun, renderRunReport } from './drive.ts';
 import { loadTargets } from './gates.ts';
 import { createHandlers } from './handlers.ts';
@@ -59,8 +63,8 @@ const config = z
     TRIAGE_PROMPT: z.string().default('triage.v3'),
     IMPLEMENT_MODEL: z.string().default('claude-sonnet-5-5'),
     IMPLEMENT_FRONTIER_MODEL: z.string().default('claude-opus-5-5'),
-    IMPLEMENT_ESCALATE_AFTER: z.coerce.number().int().min(0).default(2),
-    IMPLEMENT_ATTEMPT_BUDGET_USD: z.coerce.number().positive().max(20).default(1.25),
+    IMPLEMENT_ESCALATE_AFTER: z.coerce.number().int().min(0).default(DEFAULT_ESCALATE_AFTER),
+    IMPLEMENT_ATTEMPT_BUDGET_USD: z.coerce.number().positive().max(20).default(DEFAULT_ATTEMPT_BUDGET_USD),
     IMPLEMENT_PROMPT: z.string().default('implement.v1'),
     CONFIDENCE_THRESHOLD: z.coerce.number().min(0).max(1).default(DEFAULT_CONFIDENCE_THRESHOLD),
   })
