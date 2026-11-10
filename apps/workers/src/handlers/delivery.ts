@@ -114,7 +114,7 @@ export function createGateHandler(deps: DeliveryDeps): StepHandler {
     const workspace = await Workspace.clone(remote, target.baseBranch, signal);
     try {
       await workspace.checkoutCommit(payload.commitSha, payload.branch);
-      const { gates, links } = await runGates({
+      const { gates, links, risk } = await runGates({
         workspace,
         target,
         criteria: issue.criteria,
@@ -122,7 +122,7 @@ export function createGateHandler(deps: DeliveryDeps): StepHandler {
         headSha: payload.commitSha,
         signal,
       });
-      return { ...payload, gates, links };
+      return { ...payload, gates, links, risk };
     } finally {
       await workspace.dispose();
     }

@@ -1,4 +1,5 @@
 import { MAX_IMPLEMENT_ATTEMPTS } from './run-state-machine.ts';
+import { RISK_TIERS, type RiskTier } from './triage.ts';
 
 /**
  * The implement-and-gate loop's rules: what the work must satisfy, whether a
@@ -87,6 +88,13 @@ export function gatingOutcome(
   };
 }
 
+/**
+ * Sent with every return: without it a retry grows, fixing whatever it
+ * notices on the way, and the correction becomes a diff nobody asked for.
+ */
+export const SCOPE_LINE =
+  'Scope: change only what fixes these failures and meets the acceptance criteria. Do not refactor, reformat or fix unrelated code, and keep the rest of the previous attempt as it is.';
+
 /** What the implementer is told about failed gates, bounded in size. */
 export function implementationFeedback(failed: readonly GateResult[]): string {
   const share = Math.floor(FEEDBACK_LIMIT / Math.max(failed.length, 1));
@@ -98,6 +106,8 @@ export function implementationFeedback(failed: readonly GateResult[]): string {
   });
   return [
     'The previous attempt did not pass these quality gates. Fix the causes; do not weaken the gates.',
+    '',
+    SCOPE_LINE,
     '',
     ...sections,
   ]
@@ -112,6 +122,9 @@ function tail(text: string, limit: number): string {
 }
 
 /* ---------------------------------------------------------------- built-in gates */
+
+/** Gates every attempt faces, whatever the target; the target adds its own commands. */
+export const BUILT_IN_GATES = ['changes', 'protected_paths', 'secret_scan', 'traceability'] as const;
 
 export interface ChangedFile {
   readonly path: string;
@@ -268,4 +281,43 @@ export function traceabilityGate(
           ].join('\n'),
         };
   return { result, links };
+}
+
+/* ---------------------------------------------------------------- measured risk */
+
+/** Path globs, per target, whose change makes work riskier than it may look from the issue. */
+export interface RiskPaths {
+  readonly high: readonly string[];
+  readonly medium: readonly string[];
+}
+
+export interface MeasuredRisk {
+  readonly tier: RiskTier;
+  /** Which changed paths set the tier, e.g. "db/migrations/0002.sql matches db/** (high)". */
+  readonly reasons: readonly string[];
+}
+
+/**
+ * Risk from what the change actually touched, not what triage predicted from
+ * the issue text. Triage is a model's guess made before any code exists; this
+ * is computed from the diff, so no model can talk its way into a safer lane.
+ */
+export function measureRisk(changedPaths: readonly string[], riskPaths: RiskPaths): MeasuredRisk {
+  const reasons: string[] = [];
+  let tier: RiskTier = 'low';
+  for (const level of ['high', 'medium'] as const) {
+    const patterns = riskPaths[level].map((glob) => ({ glob, re: globToRegExp(glob) }));
+    for (const path of changedPaths) {
+      const match = patterns.find((p) => p.re.test(path));
+      if (match) {
+        reasons.push(`${path} matches ${match.glob} (${level})`);
+        tier = higherTier(tier, level);
+      }
+    }
+  }
+  return { tier, reasons };
+}
+
+export function higherTier(a: RiskTier, b: RiskTier): RiskTier {
+  return RISK_TIERS.indexOf(a) >= RISK_TIERS.indexOf(b) ? a : b;
 }

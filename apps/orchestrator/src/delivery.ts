@@ -11,6 +11,9 @@ import {
   extractCriteria,
   type GateResult,
   gatingOutcome,
+  higherTier,
+  RISK_TIERS,
+  type RiskTier,
   type TraceLink,
 } from '@factory/domain';
 import { type Kysely, sql, type Transaction } from 'kysely';
@@ -157,6 +160,10 @@ const gateResult = z.object({
     z.object({ gate: z.string(), passed: z.boolean(), summary: z.string(), details: z.string().optional() }),
   ),
   links: z.array(z.object({ criterionId: z.string(), testId: z.string() })),
+  // Absent on gate results recorded before risk was measured.
+  risk: z
+    .object({ tier: z.enum(RISK_TIERS), reasons: z.array(z.string()) })
+    .default({ tier: 'low', reasons: [] }),
 });
 
 /** Spend on this run so far, from the cost ledger. */
@@ -207,12 +214,27 @@ export async function applyNextGateResult(runs: Runs): Promise<string | null> {
         })
         .execute();
     }
+    // Risk is the higher of what triage predicted from the issue and what the
+    // diff measurably touched. Measurement can only raise it.
+    const { risk_level: predicted } = await trx
+      .selectFrom('requirement')
+      .select('risk_level')
+      .where('id', '=', issue.requirementId)
+      .executeTakeFirstOrThrow();
+    const risk = {
+      predicted,
+      measured: result.risk.tier,
+      final: predicted ? higherTier(predicted, result.risk.tier) : result.risk.tier,
+      reasons: result.risk.reasons,
+    };
+
     // The audit record names every gate and its verdict; full output stays in gate_result.
     await appendAuditEvent(trx, run.id, 'gating.completed', {
       stepId: step.id,
       attempt: result.attempt,
       commitSha: result.commitSha,
       gates: gates.map(({ gate, passed, summary }) => ({ gate, passed, summary })),
+      risk,
     });
 
     let outcome = gatingOutcome(gates, run.implementAttempts);
@@ -229,6 +251,18 @@ export async function applyNextGateResult(runs: Runs): Promise<string | null> {
 
     switch (outcome.next) {
       case 'Reviewing': {
+        if (risk.final !== predicted) {
+          await trx
+            .updateTable('requirement')
+            .set({ risk_level: risk.final })
+            .where('id', '=', issue.requirementId)
+            .execute();
+          await appendAuditEvent(trx, run.id, 'risk.raised', {
+            from: predicted,
+            to: risk.final,
+            reasons: risk.reasons,
+          });
+        }
         await recordTrace(trx, issue.requirementId, result.links, result.commitSha);
         await appendAuditEvent(trx, run.id, 'traceability.recorded', {
           commitSha: result.commitSha,
@@ -239,7 +273,7 @@ export async function applyNextGateResult(runs: Runs): Promise<string | null> {
           head: result.branch,
           base: result.baseBranch,
           title: issue.title,
-          body: pullRequestBody(issue, run.id, result.attempt, gates, result.links),
+          body: pullRequestBody(issue, run.id, result.attempt, gates, result.links, risk),
         });
         break;
       }
@@ -290,6 +324,7 @@ export function pullRequestBody(
   attempt: number,
   gates: readonly GateResult[],
   links: readonly TraceLink[],
+  risk: { predicted: RiskTier | null; measured: RiskTier; final: RiskTier; reasons: readonly string[] },
 ): string {
   const testsFor = (c: AcceptanceCriterion) =>
     links
@@ -312,5 +347,10 @@ export function pullRequestBody(
     '| Gate | Result |',
     '| --- | --- |',
     ...gates.map((g) => `| ${g.gate} | ${g.passed ? 'passed' : 'failed'}: ${escapeCell(g.summary)} |`),
+    '',
+    '## Risk',
+    '',
+    `**${risk.final}**. Predicted by triage: ${risk.predicted ?? 'not triaged'}; measured from the diff: ${risk.measured}.`,
+    ...(risk.reasons.length > 0 ? ['', ...risk.reasons.map((r) => `- \`${r}\``)] : []),
   ].join('\n');
 }

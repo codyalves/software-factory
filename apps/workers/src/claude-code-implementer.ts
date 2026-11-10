@@ -23,6 +23,11 @@ export interface ClaudeCodeOptions {
   readonly bin?: string;
 }
 
+/** Attempts on the default model before escalating to the frontier model (gates/gates.yaml). */
+export const DEFAULT_ESCALATE_AFTER = 2;
+/** Hard spend cap per implement attempt, USD (gates/gates.yaml). */
+export const DEFAULT_ATTEMPT_BUDGET_USD = 1.25;
+
 /** Results that mean the agent hit a limit we set, not that it could not run. */
 const LIMIT_SUBTYPES = new Set(['error_max_budget_usd', 'error_max_turns']);
 

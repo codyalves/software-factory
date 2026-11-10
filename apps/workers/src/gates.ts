@@ -5,6 +5,8 @@ import {
   type AcceptanceCriterion,
   changesGate,
   type GateResult,
+  type MeasuredRisk,
+  measureRisk,
   protectedPathsGate,
   secretScan,
   type TraceLink,
@@ -24,6 +26,10 @@ const targetSchema = z.object({
   gates: z.record(z.string().regex(/^[a-z][a-z0-9_]*$/), argv),
   /** Paths the implementer may not change. */
   protectedPaths: z.array(z.string().min(1)).default([]),
+  /** Changing these raises the measured risk of the work, whatever triage predicted. */
+  riskPaths: z
+    .object({ high: z.array(z.string().min(1)).default([]), medium: z.array(z.string().min(1)).default([]) })
+    .default({ high: [], medium: [] }),
   commandTimeoutMs: z.number().int().positive().default(600_000),
 });
 
@@ -43,6 +49,8 @@ export async function loadTargets(path: string): Promise<Readonly<Record<string,
 export interface GateRun {
   readonly gates: readonly GateResult[];
   readonly links: readonly TraceLink[];
+  /** Risk measured from the paths the change touched. */
+  readonly risk: MeasuredRisk;
 }
 
 /**
@@ -91,7 +99,7 @@ export async function runGates(input: {
 
   const trace = traceabilityGate(input.criteria, await workspace.testFiles());
   gates.push(trace.result);
-  return { gates, links: trace.links };
+  return { gates, links: trace.links, risk: measureRisk(changed, target.riskPaths) };
 }
 
 interface CommandRun {
