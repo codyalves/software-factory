@@ -54,8 +54,8 @@ Why TypeScript: [ADR 0004](docs/adr/0004-typescript-stack.md).
 | Milestone | Scope | State |
 | --- | --- | --- |
 | M0 Skeleton | Schema, hash-chained audit log, signed webhook intake, run state machine, CI | Done |
-| **M1 Reliable core** | Queue, leases, retries, DLQ, outbox, gates, iteration loop, decision layer | **In progress**: step queue, triage, outbox relay, budget, the implement-and-gate loop and the Claude Code implementer done; first live runs next |
-| M2 Visible | Dashboard, DLQ replay, traceability report, cloud deploy with LB and CDN | Planned |
+| M1 Reliable core | Queue, leases, retries, DLQ, outbox, gates, iteration loop, decision layer | Done: first live run took an issue to a pull request in one attempt for $0.05 |
+| **M2 Visible** | Dashboard, DLQ replay, traceability report, cloud deploy with LB and CDN | **In progress**: dashboard and traceability report done; hosting next |
 | M3 More intake | CI-failure and error-webhook intake, scheduled self-review | Planned |
 | M4 Reference mode | Behavior traces from a reference app become issues and replay gates | Planned |
 | M5 Scale story | Autoscaling workers, load test, read replica, sharding write-up | Planned |
@@ -141,6 +141,17 @@ maintains the platform; chatbot answer quality is gated by eval suites.
   attempt escalates to Opus (`gates.yaml`). Its own cost report is metered
   into the ledger, and a run that cannot start (bad key, outage) fails the
   step instead of spending an attempt.
+- **Dashboard.** A read-only Next.js app over the record: every run, each run
+  told in order (triage answers with their confidence, the numbered criteria,
+  every attempt and its checks, measured risk, the criterion-to-test trace,
+  cost by model), a traceability matrix across requirements, and the audit
+  chain, recomputed and verified on every view. See
+  [docs/dashboard.md](docs/dashboard.md); `pnpm seed:demo` fills a database
+  with realistic runs for free.
+
+  ![A run record: an issue escalated after four attempts, with its triage answers](docs/images/dashboard-run-record.png)
+
+  ![Two attempts: the first failed traceability, the second passed every check](docs/images/dashboard-run-attempts.png)
 
 ## Run it locally
 
@@ -207,6 +218,7 @@ packages/
   db/                      Kysely stores and migrator
   github/                  webhook signature verification and parsing
 db/migrations/             SQL schema, including the audit chain functions
+apps/dashboard             read-only views of the record (Next.js)
 gates/gates.yaml           policy: what is enforced (pinned to the code by a test) and what is planned
 prompts/                   versioned prompts (CODEOWNERS-protected)
 deploy/                    Dockerfile and docker compose stack

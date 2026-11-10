@@ -51,6 +51,9 @@ jobs:
       - name: Type-check
         run: pnpm typecheck
 
+      - name: Build the dashboard
+        run: pnpm --filter @factory/dashboard build
+
       - name: Test (unit + Postgres integration)
         run: pnpm test --reporter=default --reporter=junit --outputFile.junit=test-results/junit.xml
         env:

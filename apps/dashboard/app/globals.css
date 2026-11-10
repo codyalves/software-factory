@@ -1,0 +1,674 @@
+/*
+ * The factory's record, set like a regulated batch record: a cool form-grey
+ * page, blue-black ink, ballpoint blue for links and sign-offs, and green or
+ * red only for a verdict. Monospace only where the content is code.
+ */
+
+:root {
+  --page: #edf0f3;
+  --sheet: #f8f9fb;
+  --ink: #1c2733;
+  --ink-soft: #536170;
+  --rule: #c9d1da;
+  --rule-strong: #9aa7b5;
+  --pen: #2453a6;
+  --pass: #2e7a4e;
+  --pass-wash: #e3f0e8;
+  --fail: #b42318;
+  --fail-wash: #f9e5e3;
+  --amber: #8a5a00;
+  --amber-wash: #f6ecd6;
+  --sans: 'Public Sans Variable', 'Public Sans', system-ui, sans-serif;
+  --mono: 'JetBrains Mono', ui-monospace, 'SFMono-Regular', Menlo, monospace;
+  color-scheme: light;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --page: #10161c;
+    --sheet: #161e26;
+    --ink: #dbe2e9;
+    --ink-soft: #94a3b2;
+    --rule: #2b3743;
+    --rule-strong: #475766;
+    --pen: #8db1f0;
+    --pass: #6fc596;
+    --pass-wash: #173025;
+    --fail: #f2877c;
+    --fail-wash: #3a1b18;
+    --amber: #e3b65c;
+    --amber-wash: #33280f;
+    color-scheme: dark;
+  }
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  background: var(--page);
+  color: var(--ink);
+  font: 400 15px/1.55 var(--sans);
+  font-variant-numeric: tabular-nums;
+  -webkit-text-size-adjust: 100%;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  display: grid;
+  grid-template-columns: 15rem minmax(0, 1fr);
+}
+
+a {
+  color: var(--pen);
+  text-underline-offset: 0.18em;
+  text-decoration-thickness: 1px;
+}
+
+a:hover {
+  text-decoration-thickness: 2px;
+}
+
+:focus-visible {
+  outline: 2px solid var(--pen);
+  outline-offset: 2px;
+  border-radius: 2px;
+}
+
+code,
+.mono {
+  font-family: var(--mono);
+  font-size: 0.86em;
+}
+
+h1,
+h2,
+h3 {
+  font-weight: 650;
+  line-height: 1.2;
+  margin: 0;
+  letter-spacing: -0.01em;
+}
+
+h1 {
+  font-size: 1.85rem;
+  letter-spacing: -0.02em;
+}
+
+h2 {
+  font-size: 1.15rem;
+}
+
+h3 {
+  font-size: 1rem;
+}
+
+p {
+  margin: 0;
+}
+
+/* ------------------------------------------------------------- the rail */
+
+.rail {
+  position: sticky;
+  top: 0;
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  gap: 2rem;
+  padding: 1.75rem 1.25rem;
+  border-right: 1px solid var(--rule);
+}
+
+.rail-name {
+  font-weight: 700;
+  font-size: 1.05rem;
+  color: var(--ink);
+  text-decoration: none;
+  line-height: 1.25;
+}
+
+.rail-name span {
+  display: block;
+  font-weight: 400;
+  font-size: 0.85rem;
+  color: var(--ink-soft);
+}
+
+.rail nav {
+  display: flex;
+  flex-direction: column;
+}
+
+.rail nav a {
+  color: var(--ink);
+  text-decoration: none;
+  padding: 0.4rem 0.6rem;
+  margin-left: -0.6rem;
+  border-left: 3px solid transparent;
+}
+
+.rail nav a:hover {
+  border-left-color: var(--rule-strong);
+}
+
+.rail nav a[aria-current='page'] {
+  border-left-color: var(--pen);
+  font-weight: 600;
+}
+
+.rail-status {
+  margin-top: auto;
+  display: grid;
+  gap: 0.9rem;
+  font-size: 0.85rem;
+}
+
+.rail-status dt {
+  color: var(--ink-soft);
+}
+
+.rail-status dd {
+  margin: 0;
+}
+
+/* ------------------------------------------------------------- the sheet */
+
+main {
+  padding: 2.25rem clamp(1rem, 4vw, 3rem) 4rem;
+  max-width: 76rem;
+  width: 100%;
+}
+
+.lede {
+  color: var(--ink-soft);
+  max-width: 62ch;
+  margin-top: 0.5rem;
+}
+
+.page-head {
+  margin-bottom: 2rem;
+}
+
+/* ------------------------------------------------------------- verdict stamps */
+
+.stamp {
+  display: inline-block;
+  padding: 0.05rem 0.5rem;
+  border: 1.5px solid currentColor;
+  border-radius: 3px;
+  font-weight: 650;
+  font-size: 0.8rem;
+  white-space: nowrap;
+}
+
+.stamp-good {
+  color: var(--pass);
+  background: var(--pass-wash);
+}
+
+.stamp-stopped {
+  color: var(--fail);
+  background: var(--fail-wash);
+}
+
+.stamp-active {
+  color: var(--amber);
+  background: var(--amber-wash);
+}
+
+.stamp-neutral {
+  color: var(--ink-soft);
+}
+
+.risk {
+  font-size: 0.85rem;
+  white-space: nowrap;
+}
+
+.risk::before {
+  content: '';
+  display: inline-block;
+  width: 0.55rem;
+  height: 0.55rem;
+  margin-right: 0.4rem;
+  border-radius: 50%;
+  border: 1.5px solid var(--ink-soft);
+  vertical-align: 0.05em;
+}
+
+.risk-medium::before {
+  background: linear-gradient(90deg, var(--amber) 50%, transparent 50%);
+  border-color: var(--amber);
+}
+
+.risk-high::before {
+  background: var(--fail);
+  border-color: var(--fail);
+}
+
+.pass {
+  color: var(--pass);
+}
+
+.fail {
+  color: var(--fail);
+}
+
+.muted {
+  color: var(--ink-soft);
+}
+
+/* ------------------------------------------------------------- tables */
+
+.ledger {
+  width: 100%;
+  border-collapse: collapse;
+  background: var(--sheet);
+  border: 1px solid var(--rule);
+}
+
+.ledger th {
+  text-align: left;
+  font-weight: 600;
+  font-size: 0.82rem;
+  color: var(--ink-soft);
+  padding: 0.6rem 0.8rem;
+  border-bottom: 1px solid var(--rule-strong);
+  white-space: nowrap;
+}
+
+.ledger td {
+  padding: 0.65rem 0.8rem;
+  border-bottom: 1px solid var(--rule);
+  vertical-align: top;
+}
+
+.ledger tr:last-child td {
+  border-bottom: 0;
+}
+
+.ledger .num {
+  text-align: right;
+}
+
+.table-wrap {
+  overflow-x: auto;
+}
+
+.empty {
+  padding: 2rem;
+  background: var(--sheet);
+  border: 1px dashed var(--rule-strong);
+  color: var(--ink-soft);
+  max-width: 62ch;
+}
+
+/* ------------------------------------------------------------- the run record */
+
+.record-head {
+  display: grid;
+  gap: 0.75rem;
+  margin-bottom: 1.75rem;
+}
+
+.record-head .issue-ref {
+  color: var(--ink-soft);
+}
+
+.fields {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(13rem, 1fr));
+  border: 1px solid var(--rule);
+  background: var(--sheet);
+  margin: 0 0 2.5rem;
+}
+
+.fields div {
+  padding: 0.7rem 0.9rem;
+  border-right: 1px solid var(--rule);
+  border-bottom: 1px solid var(--rule);
+  margin: 0 -1px -1px 0;
+}
+
+.fields dt {
+  font-size: 0.8rem;
+  color: var(--ink-soft);
+}
+
+.fields dd {
+  margin: 0.15rem 0 0;
+  overflow-wrap: anywhere;
+}
+
+.step {
+  display: grid;
+  grid-template-columns: 2.25rem minmax(0, 1fr);
+  gap: 0 1rem;
+  margin-bottom: 2.75rem;
+}
+
+.step-number {
+  width: 2.25rem;
+  height: 2.25rem;
+  border: 1.5px solid var(--ink);
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  font-weight: 650;
+}
+
+.step-body > h2 {
+  margin: 0.35rem 0 0.9rem;
+}
+
+.step-body > .lede {
+  margin: -0.5rem 0 1rem;
+}
+
+.fallbacks {
+  margin: 0.75rem 0 0;
+  padding-left: 1.1rem;
+  color: var(--ink-soft);
+  font-size: 0.9rem;
+}
+
+.criteria {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: grid;
+  gap: 0.5rem;
+  max-width: 70ch;
+}
+
+.criteria li {
+  display: grid;
+  grid-template-columns: 3.5rem minmax(0, 1fr);
+}
+
+.criteria .ac {
+  font-weight: 650;
+  color: var(--pen);
+}
+
+.attempt {
+  border: 1px solid var(--rule);
+  background: var(--sheet);
+  margin-bottom: 1rem;
+}
+
+.attempt > header {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem 1.25rem;
+  align-items: baseline;
+  padding: 0.7rem 0.9rem;
+  border-bottom: 1px solid var(--rule);
+}
+
+.attempt > header h3 {
+  margin-right: auto;
+}
+
+.gates {
+  list-style: none;
+  margin: 0;
+  padding: 0.35rem 0;
+}
+
+.gates > li {
+  padding: 0.3rem 0.9rem;
+}
+
+.gates .verdict {
+  display: inline-block;
+  width: 3rem;
+  font-weight: 650;
+}
+
+.gates .name {
+  display: inline-block;
+  min-width: 9rem;
+  font-weight: 600;
+}
+
+details.output summary {
+  cursor: pointer;
+  color: var(--pen);
+  font-size: 0.85rem;
+  margin: 0.25rem 0 0 3rem;
+}
+
+details.output pre {
+  margin: 0.5rem 0 0.25rem 3rem;
+  padding: 0.75rem;
+  max-height: 22rem;
+  overflow: auto;
+  background: var(--page);
+  border: 1px solid var(--rule);
+  font: 0.8rem/1.5 var(--mono);
+  white-space: pre-wrap;
+}
+
+.attempt-risk {
+  padding: 0.6rem 0.9rem;
+  border-top: 1px solid var(--rule);
+  font-size: 0.88rem;
+}
+
+.attempt-risk ul {
+  margin: 0.25rem 0 0;
+  padding-left: 1.1rem;
+}
+
+/* ------------------------------------------------------------- the audit thread */
+
+.thread {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.thread > li {
+  position: relative;
+  display: grid;
+  grid-template-columns: 7.5rem 1.5rem minmax(0, 1fr);
+  gap: 0 0.75rem;
+  padding-bottom: 0.9rem;
+}
+
+/* The chain: one continuous line through every event, broken nowhere. */
+.thread > li::before {
+  content: '';
+  position: absolute;
+  left: calc(7.5rem + 0.75rem + 0.75rem - 1px);
+  top: 0.75rem;
+  bottom: -0.15rem;
+  width: 2px;
+  background: var(--pen);
+}
+
+.thread > li:last-child::before {
+  display: none;
+}
+
+.thread .knot {
+  position: relative;
+  z-index: 1;
+  width: 0.75rem;
+  height: 0.75rem;
+  margin: 0.4rem auto 0;
+  border: 2px solid var(--pen);
+  border-radius: 50%;
+  background: var(--page);
+}
+
+.thread .when {
+  text-align: right;
+  white-space: nowrap;
+  color: var(--ink-soft);
+  font-size: 0.85rem;
+  padding-top: 0.1rem;
+}
+
+.thread .what {
+  font-weight: 600;
+}
+
+.thread .link {
+  font-size: 0.78rem;
+  color: var(--ink-soft);
+  overflow-wrap: anywhere;
+}
+
+.thread .detail {
+  font-size: 0.88rem;
+  color: var(--ink-soft);
+}
+
+.seal {
+  display: flex;
+  gap: 0.75rem;
+  align-items: flex-start;
+  padding: 0.9rem 1rem;
+  border: 1.5px solid var(--pass);
+  background: var(--pass-wash);
+  max-width: 62ch;
+  margin-bottom: 2rem;
+}
+
+.seal.broken {
+  border-color: var(--fail);
+  background: var(--fail-wash);
+}
+
+.seal strong {
+  display: block;
+}
+
+.seal-mark {
+  flex: none;
+  width: 1.6rem;
+  height: 1.6rem;
+  border-radius: 50%;
+  border: 2px solid var(--pass);
+  display: grid;
+  place-items: center;
+  color: var(--pass);
+  font-weight: 700;
+}
+
+.seal.broken .seal-mark {
+  border-color: var(--fail);
+  color: var(--fail);
+}
+
+.rail-seal {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+.rail-seal .seal-mark {
+  width: 1.2rem;
+  height: 1.2rem;
+  font-size: 0.75rem;
+}
+
+.thread-dated > li {
+  grid-template-columns: 10.5rem 1.5rem minmax(0, 1fr);
+}
+
+.thread-dated > li::before {
+  left: calc(10.5rem + 0.75rem + 0.75rem - 1px);
+}
+
+details.all-events {
+  margin-top: 0.5rem;
+}
+
+details.all-events > summary {
+  cursor: pointer;
+  color: var(--pen);
+  margin: 0 0 1rem calc(7.5rem + 0.75rem + 1.5rem + 0.75rem);
+}
+
+.thread .when {
+  font-variant-numeric: tabular-nums;
+}
+
+/* ------------------------------------------------------------- small screens */
+
+@media (max-width: 52rem) {
+  body {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .rail {
+    position: static;
+    height: auto;
+    flex-direction: row;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.75rem 1.5rem;
+    padding: 1rem;
+    border-right: 0;
+    border-bottom: 1px solid var(--rule);
+  }
+
+  .rail nav {
+    flex-direction: row;
+    gap: 1rem;
+  }
+
+  .rail nav a {
+    margin-left: 0;
+    padding: 0.25rem 0;
+    border-left: 0;
+    border-bottom: 2px solid transparent;
+  }
+
+  .rail nav a[aria-current='page'] {
+    border-bottom-color: var(--pen);
+  }
+
+  .rail-status {
+    margin-top: 0;
+    width: 100%;
+    grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr));
+  }
+
+  .thread > li {
+    grid-template-columns: 4.5rem 1.5rem minmax(0, 1fr);
+  }
+
+  .thread > li::before {
+    left: calc(4.5rem + 0.75rem + 0.75rem - 1px);
+  }
+
+  details.all-events > summary {
+    margin-left: 0;
+  }
+
+  .thread-dated > li {
+    grid-template-columns: 5.5rem 1.5rem minmax(0, 1fr);
+  }
+
+  .thread-dated > li::before {
+    left: calc(5.5rem + 0.75rem + 0.75rem - 1px);
+  }
+
+  .thread-dated .when {
+    white-space: normal;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * {
+    transition: none !important;
+    animation: none !important;
+  }
+}
