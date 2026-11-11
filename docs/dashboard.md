@@ -30,16 +30,11 @@ point at real work.
 
 ## Point it at a real factory database
 
-Give it a role that can only read:
-
-```sql
-create role factory_dashboard login password '...';
-grant connect on database factory to factory_dashboard;
-grant usage on schema public to factory_dashboard;
-grant select on all tables in schema public to factory_dashboard;
-alter default privileges in schema public grant select on tables to factory_dashboard;
-grant execute on function audit_verify() to factory_dashboard;
-```
+Give it a role that can only read: run
+[`db/roles/dashboard-readonly.sql`](../db/roles/dashboard-readonly.sql) as
+the database owner, with your own password. A test applies that exact file
+and proves the role can render every view and change nothing. For the hosted
+setup (Neon and Vercel), follow [hosting.md](hosting.md).
 
 Set `DASHBOARD_PASSWORD` to require a password (HTTP basic auth, any user
 name). Without it the dashboard is open, which suits local use or a public

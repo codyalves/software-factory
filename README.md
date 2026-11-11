@@ -55,7 +55,7 @@ Why TypeScript: [ADR 0004](docs/adr/0004-typescript-stack.md).
 | --- | --- | --- |
 | M0 Skeleton | Schema, hash-chained audit log, signed webhook intake, run state machine, CI | Done |
 | M1 Reliable core | Queue, leases, retries, DLQ, outbox, gates, iteration loop, decision layer | Done: first live run took an issue to a pull request in one attempt for $0.05 |
-| **M2 Visible** | Dashboard, DLQ replay, traceability report, cloud deploy with LB and CDN | **In progress**: dashboard and traceability report done; hosting next |
+| **M2 Visible** | Dashboard, DLQ replay, traceability report, cloud deploy with LB and CDN | **In progress**: dashboard, traceability report and hosting setup done ([docs/hosting.md](docs/hosting.md)); going live next |
 | M3 More intake | CI-failure and error-webhook intake, scheduled self-review | Planned |
 | M4 Reference mode | Behavior traces from a reference app become issues and replay gates | Planned |
 | M5 Scale story | Autoscaling workers, load test, read replica, sharding write-up | Planned |
