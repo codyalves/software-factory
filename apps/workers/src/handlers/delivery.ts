@@ -140,6 +140,7 @@ export function createGateHandler(deps: DeliveryDeps): StepHandler {
         criteria: issue.criteria,
         baseSha: payload.baseSha,
         headSha: payload.commitSha,
+        regressionPath: issue.regression?.path ?? null,
         signal,
       });
       return { ...payload, gates, links, risk };

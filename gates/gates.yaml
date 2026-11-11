@@ -29,7 +29,7 @@ enforced:
     - changes            # the attempt changed something
     - protected_paths    # no CI, gate config, manifests or lockfiles touched
     - secret_scan        # no credentials in added lines
-    - traceability       # every acceptance criterion is named by a test
+    - traceability       # every acceptance criterion is named by a test this run wrote
 
   risk:
     # Final risk is the higher of triage's prediction from the issue and what

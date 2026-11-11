@@ -11,6 +11,7 @@ import {
   protectedPathsGate,
   SCOPE_LINE,
   secretScan,
+  testsAddedBy,
   traceabilityGate,
 } from './delivery.ts';
 
@@ -158,11 +159,13 @@ describe('traceability', () => {
     expect(isTestFile('src/footer.tsx')).toBe(false);
   });
 
+  const lines = (...texts: string[]) => texts.map((text, i) => ({ line: i + 1, text }));
+
   it('links each criterion to the tests that name it', () => {
     const { result, links } = traceabilityGate(criteria, [
       {
         path: 'src/footer.test.tsx',
-        content: "it('AC-1: shows the year', () => {});\nit('AC-2: uses the server clock', () => {});",
+        lines: lines("it('AC-1: shows the year', () => {});", "it('AC-2: uses the server clock', () => {});"),
       },
     ]);
 
@@ -175,11 +178,38 @@ describe('traceability', () => {
 
   it('names the criteria that have no test, and does not count AC-10 as AC-1', () => {
     const { result } = traceabilityGate(criteria, [
-      { path: 'a.test.ts', content: "it('AC-10: other', ...)\nit('AC-2: x')" },
+      { path: 'a.test.ts', lines: lines("it('AC-10: other', ...)", "it('AC-2: x')") },
     ]);
 
     expect(result).toMatchObject({ passed: false, summary: '1 of 2 criteria have no test' });
     expect(result.details).toContain('- AC-1: shows the year');
+  });
+
+  it('counts only the test lines a change adds, at their line numbers in the new file', () => {
+    const tests = testsAddedBy([
+      { path: 'lib/phone.test.ts', addedLines: [{ line: 14, text: "it('AC-1: builds a tel: link', ...)" }] },
+      { path: 'lib/phone.ts', addedLines: [{ line: 3, text: '// AC-2 handled here' }] },
+      { path: 'lib/empty.test.ts', addedLines: [] },
+    ]);
+
+    expect(tests).toEqual([
+      { path: 'lib/phone.test.ts', lines: [{ line: 14, text: "it('AC-1: builds a tel: link', ...)" }] },
+    ]);
+    expect(traceabilityGate(criteria.slice(0, 1), tests).links).toEqual([
+      { criterionId: 'AC-1', testId: 'lib/phone.test.ts:14' },
+    ]);
+  });
+
+  it('does not let a test from an earlier issue stand for this one', () => {
+    // An existing footer test named AC-1 is untouched; the change adds code but no test.
+    const { result, links } = traceabilityGate(
+      criteria,
+      testsAddedBy([{ path: 'app/page.tsx', addedLines: [{ line: 40, text: '<a href="tel:5550102048">' }] }]),
+    );
+
+    expect(links).toEqual([]);
+    expect(result).toMatchObject({ passed: false, summary: '2 of 2 criteria have no test' });
+    expect(result.details).toContain('Tests that were already in the repository do not count.');
   });
 });
 
