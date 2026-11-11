@@ -45,7 +45,10 @@ jobs:
           --health-timeout 5s
           --health-retries 10
     env:
-      DATABASE_URL: postgres://factory:factory@localhost:5432/factory
+      # The persistent factory database when FACTORY_DATABASE_URL is set (see
+      # docs/hosting.md); otherwise a throwaway one that ends with the job.
+      DATABASE_URL: ${{ secrets.FACTORY_DATABASE_URL || 'postgres://factory:factory@localhost:5432/factory' }}
+      DATABASE_KIND: ${{ secrets.FACTORY_DATABASE_URL && 'persistent' || 'throwaway' }}
       # Secret names cannot start with GITHUB_; the tester reads GITHUB_APP_*.
       GITHUB_APP_ID: ${{ secrets.FACTORY_APP_ID }}
       GITHUB_APP_PRIVATE_KEY: ${{ secrets.FACTORY_APP_PRIVATE_KEY }}
@@ -91,3 +94,5 @@ jobs:
           node apps/tester/src/run-tester.ts --repo "$REPO" --base-url http://127.0.0.1:3000 \
             --workdir target --max-issues "$MAX_ISSUES" --actor "$GITHUB_ACTOR" --report report.md $flags
           cat report.md >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "Database: $DATABASE_KIND" >> "$GITHUB_STEP_SUMMARY"

@@ -156,10 +156,18 @@ export interface CreateDbOptions {
    * replaces the connection on next use.
    */
   onIdleError?: (error: Error) => void;
+  /**
+   * Most connections the pool opens. Serverless hosts (the dashboard on
+   * Vercel) run many small instances, so each should hold only a few.
+   */
+  maxConnections?: number;
 }
 
 export function createDb(connectionString: string, options: CreateDbOptions = {}): FactoryDb {
-  const pool = new pg.Pool({ connectionString });
+  const pool = new pg.Pool({
+    connectionString,
+    ...(options.maxConnections ? { max: options.maxConnections } : {}),
+  });
   pool.on(
     'error',
     options.onIdleError ?? ((error) => console.error('idle Postgres connection failed', error)),

@@ -13,6 +13,8 @@ export const TEST_DATABASE_URL = process.env.FACTORY_TEST_DB;
 export const MIGRATIONS_DIR = fileURLToPath(new URL('../../../db/migrations', import.meta.url));
 
 export interface TestDatabase extends FactoryDb {
+  /** Connection URL of this database, as its owner. */
+  readonly url: string;
   /** Runs SQL as the database owner, e.g. to simulate tampering. */
   exec(sqlText: string): Promise<void>;
   [Symbol.asyncDispose](): Promise<void>;
@@ -40,6 +42,7 @@ export async function createTestDatabase(): Promise<TestDatabase> {
 
   return {
     ...factoryDb,
+    url: url.toString(),
     close: dispose,
     exec: async (sqlText) => {
       await factoryDb.pool.query(sqlText);

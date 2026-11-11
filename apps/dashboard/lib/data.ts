@@ -10,7 +10,8 @@ function db(): FactoryDb {
       'DATABASE_URL is not set. Point it at the factory database, ideally as a read-only role.',
     );
   }
-  cache.factoryDb ??= createDb(url);
+  // Serverless instances are many and short-lived: a few connections each.
+  cache.factoryDb ??= createDb(url, { maxConnections: 3 });
   return cache.factoryDb;
 }
 

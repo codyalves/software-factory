@@ -52,7 +52,10 @@ jobs:
     # Secret names cannot start with GITHUB_, so the app's secrets are
     # FACTORY_APP_*; the factory itself reads GITHUB_APP_* from its env.
     env:
-      DATABASE_URL: postgres://factory:factory@localhost:5432/factory
+      # The persistent factory database when FACTORY_DATABASE_URL is set (see
+      # docs/hosting.md); otherwise a throwaway one that ends with the job.
+      DATABASE_URL: ${{ secrets.FACTORY_DATABASE_URL || 'postgres://factory:factory@localhost:5432/factory' }}
+      DATABASE_KIND: ${{ secrets.FACTORY_DATABASE_URL && 'persistent' || 'throwaway' }}
       ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
       GITHUB_APP_ID: ${{ secrets.FACTORY_APP_ID }}
       GITHUB_APP_PRIVATE_KEY: ${{ secrets.FACTORY_APP_PRIVATE_KEY }}
@@ -96,6 +99,8 @@ jobs:
             --daily-budget "$DAILY_BUDGET" --actor "$GITHUB_ACTOR" \
             --report report.md --audit audit-log.json
           cat report.md >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "Database: $DATABASE_KIND" >> "$GITHUB_STEP_SUMMARY"
 
       - name: Keep the audit log
         if: always()
