@@ -52,7 +52,9 @@ jobs:
         run: pnpm typecheck
 
       - name: Install Chromium for the tester's tests
-        run: pnpm --filter @factory/tester exec playwright install --with-deps chromium
+        # GitHub's Ubuntu image already has Chrome's system libraries; --with-deps
+        # fetches them from Ubuntu's servers, so CI broke whenever those were unreachable.
+        run: pnpm --filter @factory/tester exec playwright install chromium
       - name: Build the dashboard
         run: pnpm --filter @factory/dashboard build
 

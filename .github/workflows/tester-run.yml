@@ -71,7 +71,8 @@ jobs:
       - name: Install the factory and Chromium
         run: |
           pnpm install --frozen-lockfile
-          pnpm --filter @factory/tester exec playwright install --with-deps chromium
+          # No --with-deps: the runner image already has Chrome's system libraries.
+          pnpm --filter @factory/tester exec playwright install chromium
 
       - name: Build and start the target
         working-directory: target
