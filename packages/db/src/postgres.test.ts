@@ -29,6 +29,19 @@ describe.skipIf(!TEST_DATABASE_URL)('Postgres integration', () => {
     expect(await audit.verifyInDatabase()).toEqual([]);
   });
 
+  it("reads one run's events without the rest of the record", async () => {
+    await using t = await createTestDatabase();
+    const runs = new RunStore(t.db);
+    const first = await runs.createFromIssue(issue, 'github', 'delivery-1');
+    await runs.createFromIssue({ ...issue, number: 13 }, 'github', 'delivery-2');
+    const runId = first.outcome === 'created' ? first.runId : '';
+
+    const events = await new AuditStore(t.db).readRun(runId);
+
+    expect(events.map((e) => e.type)).toEqual(['requirement.received', 'run.created']);
+    expect(events.every((e) => e.runId === runId)).toBe(true);
+  });
+
   it('keeps microsecond timestamps so app-side verification matches Postgres', async () => {
     await using t = await createTestDatabase();
     await new RunStore(t.db).createFromIssue(issue, 'github', 'delivery-1');

@@ -444,7 +444,7 @@ describe.skipIf(!TEST_DATABASE_URL)('implement-and-gate loop', () => {
     expect(report).toContain('- Implement attempts: 2');
     expect(report).toContain('- **FAIL** traceability: 1 of 1 criteria have no test');
     expect(report).toContain('| AC-1 | `year.test.js:4` |');
-    expect(report).toContain('Audit chain: valid');
+    expect(report).toContain('Audit chain: whole record valid');
   });
 
   it('stops driving when nothing can move', async () => {

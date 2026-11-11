@@ -80,7 +80,7 @@ export function renderRunReport(
     `- Pull request: ${extras.pullRequestUrl ?? 'none'}`,
     `- Implement attempts: ${String(last?.implementAttempts ?? 0)}`,
     `- Spent: $${extras.spentUsd.toFixed(4)} at list prices`,
-    `- Audit chain: ${extras.chainValid ? 'valid' : '**INVALID**'} (${events.length} events)`,
+    `- Audit chain: ${extras.chainValid ? 'whole record valid' : '**INVALID**'}; this run added ${events.length} events`,
     '',
     '### States',
     '',
