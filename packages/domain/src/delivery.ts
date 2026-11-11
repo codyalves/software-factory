@@ -227,9 +227,10 @@ export function changesGate(changedPaths: readonly string[]): GateResult {
       };
 }
 
+/** The lines of a test file that count as this run's work, with their line numbers. */
 export interface TestFile {
   readonly path: string;
-  readonly content: string;
+  readonly lines: readonly { readonly line: number; readonly text: string }[];
 }
 
 export interface TraceLink {
@@ -244,10 +245,21 @@ export function isTestFile(path: string): boolean {
 }
 
 /**
- * Every acceptance criterion must be named by at least one test, by its id in
- * the test's name (`it('AC-2: rejects an empty email', ...)`). The links
- * become the run's traceability record: requirement -> criterion -> test ->
- * commit.
+ * The test lines a run wrote: the lines its change adds to test files. Ids
+ * like AC-1 repeat across issues, so a test that was already there belongs to
+ * some earlier issue and cannot stand for this one's criteria.
+ */
+export function testsAddedBy(changes: readonly ChangedFile[]): TestFile[] {
+  return changes
+    .filter((file) => isTestFile(file.path) && file.addedLines.length > 0)
+    .map((file) => ({ path: file.path, lines: file.addedLines }));
+}
+
+/**
+ * Every acceptance criterion must be named by at least one test this run
+ * wrote (or the tester's regression test for it), by its id in the test's
+ * name (`it('AC-2: rejects an empty email', ...)`). The links become the run's
+ * traceability record: requirement -> criterion -> test -> commit.
  */
 export function traceabilityGate(
   criteria: readonly AcceptanceCriterion[],
@@ -258,10 +270,9 @@ export function traceabilityGate(
     // AC-1 must not match AC-10.
     const mention = new RegExp(`\\b${criterion.id}\\b(?!\\d)`);
     for (const file of tests) {
-      file.content.split('\n').forEach((text, index) => {
-        if (mention.test(text))
-          links.push({ criterionId: criterion.id, testId: `${file.path}:${index + 1}` });
-      });
+      for (const { line, text } of file.lines) {
+        if (mention.test(text)) links.push({ criterionId: criterion.id, testId: `${file.path}:${line}` });
+      }
     }
   }
   const missing = criteria.filter((c) => !links.some((l) => l.criterionId === c.id));
@@ -277,8 +288,8 @@ export function traceabilityGate(
           passed: false,
           summary: `${missing.length} of ${criteria.length} criteria have no test`,
           details: [
-            'Each acceptance criterion needs a test whose name starts with its id, for example',
-            `it('${missing[0]?.id}: ...', ...). Missing:`,
+            'Each acceptance criterion needs a test, written for this issue, whose name starts with its id, for example',
+            `it('${missing[0]?.id}: ...', ...). Tests that were already in the repository do not count. Missing:`,
             ...missing.map((c) => `- ${c.id}: ${c.text}`),
           ].join('\n'),
         };

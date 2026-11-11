@@ -32,7 +32,7 @@ the attempt's commit and runs:
 | `protected_paths` | it touched a protected path (CI, gate config, dependency manifests) |
 | `secret_scan` | an added line looks like a credential (reported by location, never value) |
 | `setup` + command gates | a target command (`lint`, `typecheck`, `unit_tests`, ...) exits non-zero or times out |
-| `traceability` | a criterion is not named by any test (`it('AC-1: ...')`) |
+| `traceability` | a criterion is not named by a test the run added (`it('AC-1: ...')`), or by the tester's regression test; tests already on the base branch don't count, since ids repeat across issues |
 
 Target commands come from `gates/targets.json` in the *factory* repository,
 under CODEOWNERS, not from the target: an agent working in the target cannot

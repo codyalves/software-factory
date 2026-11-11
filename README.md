@@ -129,7 +129,8 @@ maintains the platform; chatbot answer quality is gated by eval suites.
   [`gates/targets.json`](gates/targets.json), which lives here so an agent
   cannot change how it is judged), plus built-in checks for an empty change,
   protected files, committed credentials, and **traceability**: every
-  criterion must be named by a test (`it('AC-1: ...')`), giving a record of
+  criterion must be named by a test the run itself wrote (`it('AC-1: ...')`;
+  older tests that reuse the id don't count), giving a record of
   requirement → criterion → test → commit. See
   [ADR 0005](docs/adr/0005-implement-and-gate-loop.md).
 - **Claude Code as the implementer.** Each attempt is one headless

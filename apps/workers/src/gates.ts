@@ -10,6 +10,7 @@ import {
   protectedPathsGate,
   secretScan,
   type TraceLink,
+  testsAddedBy,
   traceabilityGate,
 } from '@factory/domain';
 import { z } from 'zod';
@@ -64,14 +65,17 @@ export async function runGates(input: {
   criteria: readonly AcceptanceCriterion[];
   baseSha: string;
   headSha: string;
+  /** The tester's regression test, committed before the attempt; it counts for traceability. */
+  regressionPath?: string | null;
   signal: AbortSignal;
 }): Promise<GateRun> {
   const { workspace, target, baseSha, headSha, signal } = input;
   const changed = await workspace.changedPaths(baseSha, headSha);
+  const added = await workspace.addedLines(baseSha, headSha);
   const gates: GateResult[] = [
     changesGate(changed),
     protectedPathsGate(changed, target.protectedPaths),
-    secretScan(await workspace.addedLines(baseSha, headSha)),
+    secretScan(added),
   ];
 
   let setupFailure: string | null = null;
@@ -97,7 +101,10 @@ export async function runGates(input: {
     );
   }
 
-  const trace = traceabilityGate(input.criteria, await workspace.testFiles());
+  // Only tests this run wrote, plus the regression test it was given, can trace its criteria.
+  const tests = testsAddedBy(added).filter((t) => t.path !== input.regressionPath);
+  if (input.regressionPath) tests.push(await workspace.testFile(input.regressionPath));
+  const trace = traceabilityGate(input.criteria, tests);
   gates.push(trace.result);
   return { gates, links: trace.links, risk: measureRisk(changed, target.riskPaths) };
 }

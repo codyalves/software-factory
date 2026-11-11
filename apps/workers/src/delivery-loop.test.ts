@@ -339,6 +339,38 @@ describe.skipIf(!TEST_DATABASE_URL)('implement-and-gate loop', () => {
     expect(await attempt()).toMatch(/moved to Reviewing/);
   });
 
+  it('does not let a test an earlier issue left on main stand for this issue', async () => {
+    await using t = await createTestDatabase();
+    // An earlier issue's test, already on main, is also named AC-1.
+    const earlier = join(root, 'earlier');
+    git(root, 'clone', '--quiet', bare, earlier);
+    await writeFile(
+      join(earlier, 'footer.test.js'),
+      "import { test } from 'node:test';\ntest('AC-1: an earlier issue', () => {});\n",
+    );
+    git(earlier, 'add', '.');
+    git(earlier, '-c', 'user.name=x', '-c', 'user.email=x@example.com', 'commit', '--quiet', '-m', 'earlier');
+    git(earlier, 'push', '--quiet', 'origin', 'main');
+
+    const { runs, runId, attempt } = await setup(t, scripted([fixYear, addTracedTest]));
+    await startNextImplementation(runs);
+
+    // Fixing the code without a test of its own still fails traceability.
+    expect(await attempt()).toMatch(/moved to Implementing/);
+    const failed = await t.db
+      .selectFrom('gate_result')
+      .select('gate')
+      .where('run_id', '=', runId)
+      .where('passed', '=', false)
+      .execute();
+    expect(failed).toEqual([{ gate: 'traceability' }]);
+
+    // Once it writes one, only that test is linked, not the earlier issue's.
+    expect(await attempt()).toMatch(/moved to Reviewing/);
+    const trace = await t.db.selectFrom('trace_link').select('test_id').execute();
+    expect(trace).toEqual([{ test_id: 'year.test.js:4' }]);
+  });
+
   it('escalates an issue with no acceptance criteria without starting work', async () => {
     await using t = await createTestDatabase();
     const { runs } = await setup(t, scripted([fixYear]), 'Please make the footer better.');

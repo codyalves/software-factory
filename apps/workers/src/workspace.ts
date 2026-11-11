@@ -3,7 +3,6 @@ import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { ChangedFile, TestFile } from '@factory/domain';
-import { isTestFile } from '@factory/domain';
 import { networkEnv } from './env.ts';
 
 /** How a worker reaches a target repository. */
@@ -134,15 +133,10 @@ export class Workspace {
     return parseAddedLines(await this.git(['diff', '--unified=0', '--no-renames', '--no-color', base, head]));
   }
 
-  /** Every tracked test file at HEAD, for the traceability gate. */
-  async testFiles(maxBytes = 512_000): Promise<TestFile[]> {
-    const paths = (await this.git(['ls-files'])).split('\n').filter((p) => p && isTestFile(p));
-    const files: TestFile[] = [];
-    for (const path of paths) {
-      const content = await readFile(join(this.dir, path), 'utf8');
-      if (content.length <= maxBytes) files.push({ path, content });
-    }
-    return files;
+  /** A whole test file at HEAD, every line numbered: the tester's regression test. */
+  async testFile(path: string): Promise<TestFile> {
+    const content = await readFile(join(this.dir, path), 'utf8');
+    return { path, lines: content.split('\n').map((text, i) => ({ line: i + 1, text })) };
   }
 
   async dispose(): Promise<void> {
