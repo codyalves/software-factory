@@ -1,0 +1,25 @@
+{
+  "name": "@factory/dashboard",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "next dev --port 3100",
+    "build": "next build",
+    "start": "next start --port 3100",
+    "typecheck": "tsc -p tsconfig.json"
+  },
+  "dependencies": {
+    "@factory/db": "workspace:*",
+    "@factory/domain": "workspace:*",
+    "@fontsource-variable/public-sans": "5.3.0",
+    "@fontsource/jetbrains-mono": "5.3.0",
+    "next": "16.4.5",
+    "react": "19.3.1",
+    "react-dom": "19.3.1"
+  },
+  "devDependencies": {
+    "@types/react": "19.3.0",
+    "@types/react-dom": "19.3.0"
+  }
+}
