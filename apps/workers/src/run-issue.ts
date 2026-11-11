@@ -15,11 +15,19 @@ import { writeFile } from 'node:fs/promises';
 import { hostname } from 'node:os';
 import { parseArgs } from 'node:util';
 import Anthropic from '@anthropic-ai/sdk';
-import { AuditStore, createDb, FactoryControl, migrate, OutboxRelay, RunStore, StepQueue } from '@factory/db';
+import {
+  AuditStore,
+  createDb,
+  FactoryControl,
+  migrate,
+  OutboxRelay,
+  ReportStore,
+  RunStore,
+  StepQueue,
+} from '@factory/db';
 import { ClaudeDecisionModel, loadPrompt } from '@factory/decisions';
 import { DEFAULT_CONFIDENCE_THRESHOLD, isTerminal } from '@factory/domain';
 import { GitHubAppAuth, GitHubForge, gitHubRepoAccess, parsePrivateKey } from '@factory/github';
-import { sql } from 'kysely';
 import { z } from 'zod';
 import {
   applyNextGateResult,
@@ -160,10 +168,11 @@ const outcome = await driveRun({
     const run = await runs.get(runId);
     if (!run) return true;
     const resting = isTerminal(run.state) || run.state === 'Reviewing';
-    // Wait for comments and the pull request to go out before stopping.
+    // Wait for this run's comments and pull request to go out before stopping.
     const { pending } = await db
       .selectFrom('outbox')
       .select((eb) => eb.fn.countAll<string>().as('pending'))
+      .where('run_id', '=', runId)
       .where('sent_at', 'is', null)
       .where('failed_at', 'is', null)
       .executeTakeFirstOrThrow();
@@ -175,26 +184,17 @@ const outcome = await driveRun({
 
 await control.pause(actor, 'manual run finished');
 
+// The database keeps every run, so the report reads this run's events, cost
+// and pull request only. The chain check still covers the whole record.
 const audit = new AuditStore(db);
-const events = await audit.readAll();
-const { rows } = await sql<{
-  spent: string;
-}>`select coalesce(sum(usd), 0)::text as spent from cost_ledger`.execute(db);
-const pr = await db
-  .selectFrom('outbox')
-  .select('result')
-  .where('kind', '=', 'pull_request.open')
-  .where('sent_at', 'is not', null)
-  .executeTakeFirst();
-const report = renderRunReport(
-  events.filter((e) => e.runId === runId || e.runId === null),
-  {
-    title: `${repo}#${issueNumber} ${issue.title}`,
-    spentUsd: Number(rows[0]?.spent ?? 0),
-    pullRequestUrl: (pr?.result as { url?: string } | null)?.url ?? null,
-    chainValid: (await audit.verifyInDatabase()).length === 0,
-  },
-);
+const events = await audit.readRun(runId);
+const summary = await new ReportStore(db).runReport(runId);
+const report = renderRunReport(events, {
+  title: `${repo}#${issueNumber} ${issue.title}`,
+  spentUsd: summary?.spentUsd ?? 0,
+  pullRequestUrl: summary?.pullRequestUrl ?? null,
+  chainValid: (await audit.verifyInDatabase()).length === 0,
+});
 console.log(
   outcome.finished ? report : `${report}\n\n**Stopped after ${outcome.rounds} rounds without finishing.**`,
 );

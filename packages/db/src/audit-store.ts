@@ -61,6 +61,14 @@ export class AuditStore {
     return rows.map(toEvent);
   }
 
+  /** One run's events, in order. The chain is shared, so verify it with verify(), not this. */
+  async readRun(runId: string): Promise<AuditEvent[]> {
+    const { rows } = await sql<AuditRow>`
+      select ${COLUMNS} from audit_event where run_id = ${runId}::uuid order by seq
+    `.execute(this.#db);
+    return rows.map(toEvent);
+  }
+
   /** Recomputes the chain in application code. */
   async verify(): Promise<ChainVerification> {
     return verifyChain(await this.readAll());
