@@ -17,6 +17,7 @@ pnpm test            # unit tests only; Postgres tests are skipped
 FACTORY_TEST_DB=postgres://factory:factory@localhost:5432/factory pnpm test
 
 docker compose -f deploy/docker-compose.yml --env-file .env up --build   # whole stack
+DATABASE_URL=... pnpm seed:demo && DATABASE_URL=... pnpm dev:dashboard    # dashboard on demo data
 scripts/send-test-webhook.sh                                            # signed fake issue event
 ```
 
@@ -38,6 +39,7 @@ imports include the `.ts` extension. Use `import type` for types.
 - `apps/orchestrator`: the only writer of run state. Drain loops, outbox relay, lease reaper
 - `apps/workers`: claim steps from the queue and run handlers: triage, implement, gate
 - `apps/tester`: crawls the target, confirms findings with Playwright tests, files them (`docs/tester.md`)
+- `apps/dashboard`: Next.js, read-only views of the record via `ReportStore` (`docs/dashboard.md`)
 - `packages/domain`: pure logic. State machine, audit chain, retry policy, triage rules
 - `packages/db`: Kysely stores, migrator, step queue, outbox
 - `packages/decisions`: decision engines (Claude via structured outputs), prompt loading
