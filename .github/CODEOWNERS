@@ -18,3 +18,6 @@
 /evals/                                       @codyalves
 # The implement-and-gate rules: what passes, and the built-in gates.
 /packages/domain/src/delivery.ts              @codyalves
+# What the tester reports and the tests it writes: they become protected requirements.
+/packages/domain/src/findings.ts              @codyalves
+/apps/tester/src/repro.ts                     @codyalves

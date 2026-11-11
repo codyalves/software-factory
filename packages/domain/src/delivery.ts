@@ -23,7 +23,9 @@ const BULLET = /^\s*(?:[-*+]|\d+[.)])\s+(?:\[[ xX]\]\s+)?(.+?)\s*$/;
  */
 export function extractCriteria(body: string): AcceptanceCriterion[] {
   const criteria: AcceptanceCriterion[] = [];
-  for (const line of body.split(/\r?\n/)) {
+  // Bullets inside code blocks and HTML comments are content, not criteria.
+  const prose = body.replace(/<!--[\s\S]*?-->/g, '').replace(/^(```|~~~)[\s\S]*?^\1/gm, '');
+  for (const line of prose.split(/\r?\n/)) {
     const text = BULLET.exec(line)?.[1];
     if (text) {
       criteria.push({ id: `AC-${criteria.length + 1}`, text });

@@ -1,12 +1,16 @@
 {
   "codyalves/factory-target-app": {
     "baseBranch": "main",
-    "setup": [["pnpm", "install", "--frozen-lockfile"]],
+    "setup": [
+      ["pnpm", "install", "--frozen-lockfile"],
+      ["pnpm", "exec", "playwright", "install", "chromium"]
+    ],
     "gates": {
       "lint": ["pnpm", "lint"],
       "typecheck": ["pnpm", "typecheck"],
       "unit_tests": ["pnpm", "test"],
-      "build": ["pnpm", "build"]
+      "build": ["pnpm", "build"],
+      "e2e": ["pnpm", "test:e2e"]
     },
     "protectedPaths": [
       ".github/**",
@@ -17,7 +21,9 @@
       "biome.json",
       "vitest.config.*",
       "next.config.*",
-      "CLAUDE.md"
+      "CLAUDE.md",
+      "tests/regressions/**",
+      "playwright.config.*"
     ],
     "riskPaths": {
       "high": [

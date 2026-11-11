@@ -1,4 +1,12 @@
-import type { ForgeAdapter, ForgeIssue, IssueComment, PullRequestDraft } from '@factory/domain';
+import {
+  type ForgeAdapter,
+  type ForgeIssue,
+  type IssueComment,
+  type IssueDraft,
+  type OpenFinding,
+  type PullRequestDraft,
+  parseFingerprint,
+} from '@factory/domain';
 import type { GitHubAppAuth } from './app-auth.ts';
 import { type Fetch, ForgeError, githubRequest } from './client.ts';
 
@@ -98,6 +106,40 @@ export class GitHubForge implements ForgeAdapter {
     return first ? { number: first.number, url: first.html_url } : null;
   }
 
+  async createIssue(issue: IssueDraft): Promise<{ number: number; url: string; reused: boolean }> {
+    if (issue.mayAlreadyExist) {
+      const existing = (await this.openFindings(issue.repo)).find((f) => f.fingerprint === issue.fingerprint);
+      if (existing) return { number: existing.number, url: existing.url, reused: true };
+    }
+    const created = await githubRequest<{ number: number; html_url: string }>(
+      await this.#request(issue.repo),
+      'POST',
+      `/repos/${issue.repo}/issues`,
+      { title: issue.title, body: issue.body, labels: issue.labels },
+    );
+    return { number: created.number, url: created.html_url, reused: false };
+  }
+
+  async openFindings(repo: string): Promise<OpenFinding[]> {
+    const found: OpenFinding[] = [];
+    // Five pages of 100 is far more open findings than anyone should have.
+    for (let page = 1; page <= 5; page++) {
+      const issues = await githubRequest<
+        { number: number; html_url: string; body: string | null; pull_request?: unknown }[]
+      >(
+        await this.#request(repo),
+        'GET',
+        `/repos/${repo}/issues?state=open&labels=found-by-tester&per_page=100&page=${page}`,
+      );
+      for (const issue of issues) {
+        const fingerprint = issue.pull_request ? null : parseFingerprint(issue.body ?? '');
+        if (fingerprint) found.push({ number: issue.number, url: issue.html_url, fingerprint });
+      }
+      if (issues.length < 100) break;
+    }
+    return found;
+  }
+
   /** An issue as the factory sees it, for starting a run by hand. */
   async issue(repo: string, issueNumber: number): Promise<ForgeIssue> {
     const issue = await githubRequest<{
@@ -106,6 +148,7 @@ export class GitHubForge implements ForgeAdapter {
       body: string | null;
       labels: ({ name?: string } | string)[];
       pull_request?: unknown;
+      user?: { login?: string } | null;
     }>(await this.#request(repo), 'GET', `/repos/${repo}/issues/${issueNumber}`);
     if (issue.pull_request) {
       throw new ForgeError(`${repo}#${issueNumber} is a pull request, not an issue`, {
@@ -119,6 +162,7 @@ export class GitHubForge implements ForgeAdapter {
       title: issue.title,
       body: issue.body ?? '',
       labels: issue.labels.map((l) => (typeof l === 'string' ? l : (l.name ?? ''))).filter(Boolean),
+      ...(issue.user?.login ? { author: issue.user.login } : {}),
     };
   }
 

@@ -13,6 +13,8 @@ interface RequirementTable {
   body: string;
   risk_level: ColumnType<'low' | 'medium' | 'high' | null, never, 'low' | 'medium' | 'high'>;
   criteria: ColumnType<unknown, string | undefined, string>;
+  author: string | null;
+  regression: ColumnType<unknown, string | null | undefined, string | null>;
   created_at: Generated<Date>;
 }
 
@@ -94,7 +96,7 @@ interface StepAttemptTable {
 
 interface OutboxTable {
   id: Generated<string>;
-  run_id: string;
+  run_id: string | null;
   kind: string;
   payload: ColumnType<unknown, string, never>;
   attempts: Generated<number>;

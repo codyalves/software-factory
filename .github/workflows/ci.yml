@@ -51,6 +51,8 @@ jobs:
       - name: Type-check
         run: pnpm typecheck
 
+      - name: Install Chromium for the tester's tests
+        run: pnpm --filter @factory/tester exec playwright install --with-deps chromium
       - name: Build the dashboard
         run: pnpm --filter @factory/dashboard build
 

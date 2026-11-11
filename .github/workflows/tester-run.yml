@@ -1,0 +1,93 @@
+name: tester-run
+
+# Crawls a fresh build of the target app, confirms each problem with a
+# Playwright test that fails three times out of three, and files confirmed
+# problems as issues carrying that test (labelled found-by-tester). Uses no
+# model, so it spends no API credit. Started by hand only; filing is opt-in.
+on:
+  workflow_dispatch:
+    inputs:
+      repo:
+        description: Target repository
+        default: codyalves/factory-target-app
+        required: true
+      file_issues:
+        description: File confirmed findings as issues (otherwise report only)
+        type: boolean
+        default: false
+      max_issues:
+        description: Most issues to file in one run
+        default: '10'
+        required: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: tester-run
+  cancel-in-progress: false
+
+jobs:
+  tester-run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: factory
+          POSTGRES_PASSWORD: factory
+          POSTGRES_DB: factory
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U factory"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgres://factory:factory@localhost:5432/factory
+      # Secret names cannot start with GITHUB_; the tester reads GITHUB_APP_*.
+      GITHUB_APP_ID: ${{ secrets.FACTORY_APP_ID }}
+      GITHUB_APP_PRIVATE_KEY: ${{ secrets.FACTORY_APP_PRIVATE_KEY }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Check out the target
+        uses: actions/checkout@v7
+        with:
+          repository: ${{ inputs.repo }}
+          path: target
+
+      - uses: pnpm/action-setup@v6
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 26
+          cache: pnpm
+
+      - name: Install the factory and Chromium
+        run: |
+          pnpm install --frozen-lockfile
+          pnpm --filter @factory/tester exec playwright install --with-deps chromium
+
+      - name: Build and start the target
+        working-directory: target
+        run: |
+          pnpm install --frozen-lockfile
+          pnpm build
+          nohup pnpm start --port 3000 > ../target.log 2>&1 &
+          for i in $(seq 1 60); do curl -sf http://127.0.0.1:3000/ > /dev/null && exit 0; sleep 1; done
+          cat ../target.log; exit 1
+
+      - name: Crawl, confirm and report
+        env:
+          REPO: ${{ inputs.repo }}
+          MAX_ISSUES: ${{ inputs.max_issues }}
+          FILE_ISSUES: ${{ inputs.file_issues }}
+        run: |
+          set -o pipefail
+          flags=""
+          if [ "$FILE_ISSUES" = "true" ]; then flags="--file"; fi
+          node apps/tester/src/run-tester.ts --repo "$REPO" --base-url http://127.0.0.1:3000 \
+            --workdir target --max-issues "$MAX_ISSUES" --actor "$GITHUB_ACTOR" --report report.md $flags
+          cat report.md >> "$GITHUB_STEP_SUMMARY"

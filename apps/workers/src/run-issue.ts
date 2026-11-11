@@ -85,6 +85,8 @@ const auth = new GitHubAppAuth({
   privateKey: parsePrivateKey(config.GITHUB_APP_PRIVATE_KEY),
 });
 const forge = new GitHubForge({ auth });
+// Only issues the factory's own App opened may carry a protected regression test.
+const trustedAuthors = [await auth.botLogin()];
 const runs = new RunStore(db);
 const queue = new StepQueue(db);
 const control = new FactoryControl(db);
@@ -137,7 +139,7 @@ const outcome = await driveRun({
   transitions: [
     () => startNextTriage(runs),
     () => applyNextTriageResult(runs, config.CONFIDENCE_THRESHOLD),
-    () => startNextImplementation(runs),
+    () => startNextImplementation(runs, { trustedAuthors }),
     () => applyNextImplementation(runs),
     () => applyNextGateResult(runs),
     () => deliverNextOutbox(relay, forge, () => control.allowsSending()),

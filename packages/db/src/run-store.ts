@@ -2,6 +2,7 @@ import {
   type AcceptanceCriterion,
   evaluateTransition,
   type ForgeIssue,
+  type ReproTest,
   type RunState,
 } from '@factory/domain';
 import { type Kysely, sql, type Transaction } from 'kysely';
@@ -31,6 +32,10 @@ export interface RunIssue {
   readonly body: string;
   /** Numbered when the run leaves Planning; empty before. */
   readonly criteria: readonly AcceptanceCriterion[];
+  /** Who opened the issue, when known. */
+  readonly author: string | null;
+  /** The tester's regression test, accepted at Planning when the author is the factory's App. */
+  readonly regression: ReproTest | null;
 }
 
 /** A step of a run that has finished, one way or the other. */
@@ -77,11 +82,18 @@ export class RunStore {
 
       const requirement = await trx
         .insertInto('requirement')
-        .values({ repo: issue.repo, issue_number: issue.number, title: issue.title, body: issue.body })
+        .values({
+          repo: issue.repo,
+          issue_number: issue.number,
+          title: issue.title,
+          body: issue.body,
+          author: issue.author ?? null,
+        })
         .onConflict((oc) =>
           oc.columns(['repo', 'issue_number']).doUpdateSet((eb) => ({
             title: eb.ref('excluded.title'),
             body: eb.ref('excluded.body'),
+            author: eb.ref('excluded.author'),
           })),
         )
         .returning('id')
@@ -239,6 +251,8 @@ export class RunStore {
         'requirement.title',
         'requirement.body',
         'requirement.criteria',
+        'requirement.author',
+        'requirement.regression',
       ])
       .where('run.id', '=', runId)
       .executeTakeFirst();
@@ -250,6 +264,8 @@ export class RunStore {
           title: row.title,
           body: row.body,
           criteria: Array.isArray(row.criteria) ? (row.criteria as AcceptanceCriterion[]) : [],
+          author: row.author,
+          regression: row.regression ? (row.regression as ReproTest) : null,
         }
       : null;
   }

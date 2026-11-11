@@ -153,6 +153,16 @@ maintains the platform; chatbot answer quality is gated by eval suites.
 
   ![Two attempts: the first failed traceability, the second passed every check](docs/images/dashboard-run-attempts.png)
 
+- **Tester (phase 1).** A crawler finds problems a program can decide on its
+  own (uncaught errors, console errors, failed requests, broken links,
+  serious accessibility violations), confirms each with a generated
+  Playwright test that fails three times out of three, and files the
+  confirmed ones as issues carrying that test. The dev loop must make the
+  test pass without changing it: the worker commits it first and the folder
+  is protected. Only the factory's own App can attach such a test. No model,
+  no cost. See [docs/tester.md](docs/tester.md) and
+  [ADR 0006](docs/adr/0006-tester.md).
+
 ## Run it locally
 
 Requires Docker. To work outside Docker you need Node 26 and pnpm (`npm install -g pnpm`).

@@ -5,6 +5,9 @@ dist/
 .vscode/
 .idea/
 *.log
+.fixture-*/
+test-results/
+playwright-report/
 .next/
 next-env.d.ts
 *.tsbuildinfo

@@ -10,7 +10,8 @@ import type { Database } from './database.ts';
  */
 export async function enqueueOutbox(
   db: Kysely<Database> | Transaction<Database>,
-  runId: string,
+  /** Null for messages that belong to no run, such as the tester's issues. */
+  runId: string | null,
   kind: string,
   payload: unknown,
 ): Promise<void> {
@@ -22,7 +23,7 @@ export async function enqueueOutbox(
 
 export interface OutboxMessage {
   readonly id: string;
-  readonly runId: string;
+  readonly runId: string | null;
   readonly kind: string;
   readonly payload: unknown;
   /** Failed attempts so far. Above zero, an earlier attempt may have reached the other side. */

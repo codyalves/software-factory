@@ -171,6 +171,13 @@ export function recordingForge(): ForgeAdapter & { sent: { kind: string; body: s
       return { number: next, url: `https://github.com/${pr.repo}/pull/${next++}`, reused: false };
     },
     async mergePullRequest() {},
+    async createIssue(issue) {
+      sent.push({ kind: 'issue', body: issue.body });
+      return { number: next, url: `https://github.com/${issue.repo}/issues/${next++}`, reused: false };
+    },
+    async openFindings() {
+      return [];
+    },
   };
 }
 
