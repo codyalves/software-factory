@@ -7,7 +7,7 @@
     ".": "./src/index.ts"
   },
   "dependencies": {
-    "@anthropic-ai/sdk": "^1.6.0",
+    "@anthropic-ai/sdk": "^1.8.0",
     "@factory/domain": "workspace:*",
     "zod": "4.6.7"
   }
