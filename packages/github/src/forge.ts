@@ -342,6 +342,21 @@ export class GitHubForge implements ForgeAdapter {
     return this.requestMerge({ repo: input.repo, head: revertHead });
   }
 
+  /** Swaps one label for another on an issue. Removing a label it does not have is fine. */
+  async relabel(repo: string, issueNumber: number, remove: string, add: string): Promise<void> {
+    const request = await this.#request(repo);
+    try {
+      await githubRequest(
+        request,
+        'DELETE',
+        `/repos/${repo}/issues/${issueNumber}/labels/${encodeURIComponent(remove)}`,
+      );
+    } catch (error) {
+      if (!(error instanceof ForgeError && error.status === 404)) throw error;
+    }
+    await githubRequest(request, 'POST', `/repos/${repo}/issues/${issueNumber}/labels`, { labels: [add] });
+  }
+
   /** Every open issue in the repository (not pull requests), for working through a backlog. */
   async openIssues(repo: string): Promise<ForgeIssue[]> {
     const found: ForgeIssue[] = [];

@@ -240,6 +240,44 @@ export class RunStore {
     });
   }
 
+  /**
+   * Stops an active run: moves it to Cancelled and dead-letters its queued
+   * and running steps, so no worker picks up work for it (a running step's
+   * late result is refused, as for any step whose lease was taken back).
+   * Returns null when the run is already in a final state.
+   */
+  cancel(runId: string, actor: string, reason: string): Promise<RunSummary | null> {
+    return this.#db.transaction().execute(async (trx) => {
+      const row = await trx
+        .selectFrom('run')
+        .select(['id', 'requirement_id', 'state', 'implement_attempts'])
+        .where('id', '=', runId)
+        .forUpdate()
+        .executeTakeFirst();
+      if (!row || TERMINAL_STATES.includes(row.state)) return null;
+
+      const stopped = await trx
+        .updateTable('step')
+        .set({
+          status: 'dead_lettered',
+          last_error: `run cancelled: ${reason}`,
+          lease_owner: null,
+          lease_until: null,
+          updated_at: sql<Date>`now()`,
+        })
+        .where('run_id', '=', runId)
+        .where('status', 'in', ['queued', 'running'])
+        .returning('id')
+        .execute();
+      await appendAuditEvent(trx, runId, 'run.cancelled', {
+        actor,
+        reason,
+        stepsStopped: stopped.map((s) => s.id),
+      });
+      return transition(trx, toSummary(row), 'Cancelled', `cancelled by ${actor}: ${reason}`);
+    });
+  }
+
   async getIssue(runId: string): Promise<RunIssue | null> {
     const row = await this.#db
       .selectFrom('run')

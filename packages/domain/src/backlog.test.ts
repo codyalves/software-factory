@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import { type BacklogIssue, dependencies, nextFromBacklog, READY_LABEL } from './backlog.ts';
+import {
+  type BacklogIssue,
+  dependencies,
+  needsOwnerAfter,
+  nextFromBacklog,
+  previousRunAction,
+  READY_LABEL,
+} from './backlog.ts';
 
 const issue = (number: number, body = '', labels = [READY_LABEL]): BacklogIssue => ({
   number,
@@ -44,5 +51,29 @@ describe('nextFromBacklog', () => {
     const issues = [issue(3, '', ['bug']), issue(4), issue(5), issue(6)];
 
     expect(nextFromBacklog(issues, new Set([3, 4, 5]), new Set([4]))?.next?.number).toBe(5);
+  });
+});
+
+describe('previousRunAction', () => {
+  it('runs an issue with no run, or whose last run finished', () => {
+    expect(previousRunAction(null)).toBe('run');
+    expect(previousRunAction('Merged')).toBe('run');
+    expect(previousRunAction('Escalated')).toBe('run');
+  });
+
+  it('leaves a run held for review to the owner', () => {
+    expect(previousRunAction('Reviewing')).toBe('held');
+  });
+
+  it('cancels a run a stopped session left unfinished, then runs again', () => {
+    expect(previousRunAction('Implementing')).toBe('cancel-and-run');
+    expect(previousRunAction('Merging')).toBe('cancel-and-run');
+  });
+});
+
+describe('needsOwnerAfter', () => {
+  it('hands the owner every outcome except shipping', () => {
+    expect(['Reviewing', 'Escalated', 'Rejected', 'Cancelled'].every(needsOwnerAfter)).toBe(true);
+    expect(needsOwnerAfter('Merged')).toBe(false);
   });
 });
