@@ -20,7 +20,7 @@
     "seed:demo": "node apps/workers/src/testing/seed-demo.ts"
   },
   "devDependencies": {
-    "@biomejs/biome": "2.6.6",
+    "@biomejs/biome": "2.6.7",
     "@types/node": "26.6.6",
     "@types/pg": "8.23.1",
     "typescript": "7.0.2",
