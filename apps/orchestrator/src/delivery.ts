@@ -8,6 +8,8 @@ import {
 } from '@factory/db';
 import {
   type AcceptanceCriterion,
+  type DeliveryDecision,
+  deliveryDecision,
   extractCriteria,
   type GateResult,
   gatingOutcome,
@@ -15,6 +17,7 @@ import {
   parseRepro,
   RISK_TIERS,
   type RiskTier,
+  type RunState,
   type TraceLink,
 } from '@factory/domain';
 import { type Kysely, sql, type Transaction } from 'kysely';
@@ -22,10 +25,14 @@ import { z } from 'zod';
 
 export const IMPLEMENT_STEP = 'implement';
 export const GATE_STEP = 'gate';
+export const MERGE_STEP = 'merge';
 
 /** Implementation runs a coding agent and gates run test suites: give them room. */
 const IMPLEMENT_TIMEOUT_MS = 30 * 60_000;
 const GATE_TIMEOUT_MS = 30 * 60_000;
+/** One watch of a merge: the worker gives up after 20 minutes, and the queue retries twice. */
+const MERGE_TIMEOUT_MS = 25 * 60_000;
+const MERGE_ATTEMPTS = 3;
 
 type Runs = Pick<RunStore, 'advanceNextWith' | 'advanceOnFinishedStep' | 'getIssue'>;
 
@@ -280,6 +287,8 @@ export async function applyNextGateResult(runs: Runs): Promise<string | null> {
       }
     }
 
+    let next: RunState = outcome.next;
+    let reason = outcome.reason;
     switch (outcome.next) {
       case 'Reviewing': {
         if (risk.final !== predicted) {
@@ -299,13 +308,34 @@ export async function applyNextGateResult(runs: Runs): Promise<string | null> {
           commitSha: result.commitSha,
           links: result.links,
         });
+        // Low and medium risk ship without a person; high risk waits for the owner.
+        const delivery = deliveryDecision(risk.final);
+        await appendAuditEvent(trx, run.id, 'delivery.decided', {
+          decision: delivery.next === 'Merging' ? 'merge' : 'hold',
+          risk: risk.final,
+          reason: delivery.reason,
+        });
         await enqueueOutbox(trx, run.id, 'pull_request.open', {
           repo: issue.repo,
           head: result.branch,
           base: result.baseBranch,
           title: issue.title,
-          body: pullRequestBody(issue, run.id, result.attempt, gates, result.links, risk),
+          body: pullRequestBody(issue, run.id, result.attempt, gates, result.links, risk, delivery),
         });
+        if (delivery.next === 'Merging') {
+          const target = { repo: issue.repo, head: result.branch };
+          await enqueueOutbox(trx, run.id, 'pull_request.merge', target);
+          await enqueueStep(trx, {
+            runId: run.id,
+            kind: MERGE_STEP,
+            idempotencyKey: `${run.id}:merge:${result.attempt}`,
+            payload: target,
+            timeoutMs: MERGE_TIMEOUT_MS,
+            maxAttempts: MERGE_ATTEMPTS,
+          });
+        }
+        next = delivery.next;
+        reason = `${outcome.reason}; ${delivery.reason}`;
         break;
       }
       case 'Implementing':
@@ -319,7 +349,36 @@ export async function applyNextGateResult(runs: Runs): Promise<string | null> {
         });
         break;
     }
-    return { to: outcome.next, reason: outcome.reason };
+    return { to: next, reason };
+  });
+  return run ? `run ${run.id} moved to ${run.state}` : null;
+}
+
+const mergeResult = z.discriminatedUnion('merged', [
+  z.object({ done: z.literal(true), merged: z.literal(true), mergeSha: z.string() }),
+  z.object({ done: z.literal(true), merged: z.literal(false), reason: z.string() }),
+]);
+
+/**
+ * Merging -> Merged, or Escalated when the target's CI failed, the pull
+ * request was closed, or GitHub never merged it while the step was watching.
+ */
+export async function applyNextMergeResult(runs: Runs): Promise<string | null> {
+  const run = await runs.advanceOnFinishedStep('Merging', MERGE_STEP, async (trx, run, step) => {
+    const issue = await issueOf(runs, run.id);
+    const result = step.status === 'succeeded' ? mergeResult.parse(step.result) : null;
+    if (result?.merged) {
+      await appendAuditEvent(trx, run.id, 'delivery.merged', { mergeSha: result.mergeSha });
+      return { to: 'Merged', reason: `merged as ${result.mergeSha.slice(0, 12)}` };
+    }
+    const why = result ? result.reason : `GitHub did not merge it: ${step.lastError ?? 'unknown error'}`;
+    await appendAuditEvent(trx, run.id, 'delivery.failed', { stepId: step.id, reason: why });
+    await enqueueOutbox(trx, run.id, 'issue.comment', {
+      repo: issue.repo,
+      issueNumber: issue.issueNumber,
+      body: `The software factory passed every quality gate for this issue but could not ship it: ${why}. A person needs to take it from here; the pull request is still open.`,
+    });
+    return { to: 'Escalated', reason: `could not merge: ${why}` };
   });
   return run ? `run ${run.id} moved to ${run.state}` : null;
 }
@@ -356,6 +415,7 @@ export function pullRequestBody(
   gates: readonly GateResult[],
   links: readonly TraceLink[],
   risk: { predicted: RiskTier | null; measured: RiskTier; final: RiskTier; reasons: readonly string[] },
+  delivery: DeliveryDecision,
 ): string {
   const testsFor = (c: AcceptanceCriterion) =>
     links
@@ -383,5 +443,11 @@ export function pullRequestBody(
     '',
     `**${risk.final}**. Predicted by triage: ${risk.predicted ?? 'not triaged'}; measured from the diff: ${risk.measured}.`,
     ...(risk.reasons.length > 0 ? ['', ...risk.reasons.map((r) => `- \`${r}\``)] : []),
+    '',
+    '## Delivery',
+    '',
+    delivery.next === 'Merging'
+      ? "The factory merges this automatically once the repository's required checks pass, and it ships with the next deployment."
+      : `Held for the owner's approval (${delivery.reason}). Merge it when you are satisfied.`,
   ].join('\n');
 }

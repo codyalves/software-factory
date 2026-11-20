@@ -10,12 +10,16 @@ evidence, and can you prove the record wasn't edited afterwards?**
 ```mermaid
 flowchart LR
     I[Issue labeled factory] --> T[Triage] --> P[Spec + plan] --> M[Implement] --> G{Gates pass?}
-    G -- yes --> R[Review] --> MG[Merge or approve]
+    G -- "yes, low or medium risk" --> MG[Merge once CI passes]
+    G -- "yes, high risk" --> R[Owner reviews] --> MG
     G -- "fail: iterate, max 4" --> M
     M -- budget or attempts used up --> E[Escalate to a human]
 ```
 
 Every transition writes an event to a hash-chained, append-only audit log in Postgres.
+The owner reviews the factory, not each change: work the gates pass ships
+without a person unless its risk is high
+([ADR 0007](docs/adr/0007-continuous-delivery.md)).
 
 ## Design principles
 

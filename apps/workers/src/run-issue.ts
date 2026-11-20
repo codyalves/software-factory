@@ -32,6 +32,7 @@ import { z } from 'zod';
 import {
   applyNextGateResult,
   applyNextImplementation,
+  applyNextMergeResult,
   startNextImplementation,
 } from '../../orchestrator/src/delivery.ts';
 import { deliverNextOutbox } from '../../orchestrator/src/outbox.ts';
@@ -129,6 +130,7 @@ const handlers = createHandlers({
       escalateAfter: config.IMPLEMENT_ESCALATE_AFTER,
       maxBudgetUsd: config.IMPLEMENT_ATTEMPT_BUDGET_USD,
     }),
+    forge,
   },
 });
 
@@ -150,6 +152,7 @@ const outcome = await driveRun({
     () => startNextImplementation(runs, { trustedAuthors }),
     () => applyNextImplementation(runs),
     () => applyNextGateResult(runs),
+    () => applyNextMergeResult(runs),
     () => deliverNextOutbox(relay, forge, () => control.allowsSending()),
   ],
   async work() {

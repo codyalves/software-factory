@@ -17,6 +17,11 @@ const pullRequest = z.object({
   body: z.string(),
 });
 
+const mergeRequest = z.object({
+  repo: z.string().regex(/^[\w.-]+\/[\w.-]+$/),
+  head: z.string().min(1),
+});
+
 const newIssue = z.object({
   repo: z.string().regex(/^[\w.-]+\/[\w.-]+$/),
   title: z.string().min(1).max(256),
@@ -48,6 +53,13 @@ export function createOutboxSender(forge: ForgeAdapter): (message: OutboxMessage
           throw new MalformedMessage(`malformed pull_request.open payload: ${parsed.error.message}`);
         }
         return forge.openPullRequest({ ...parsed.data, mayAlreadyExist: message.attempts > 0 });
+      }
+      case 'pull_request.merge': {
+        const parsed = mergeRequest.safeParse(message.payload);
+        if (!parsed.success) {
+          throw new MalformedMessage(`malformed pull_request.merge payload: ${parsed.error.message}`);
+        }
+        return forge.requestMerge(parsed.data);
       }
       case 'issue.create': {
         const parsed = newIssue.safeParse(message.payload);

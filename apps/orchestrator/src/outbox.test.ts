@@ -156,6 +156,8 @@ describe.skipIf(!TEST_DATABASE_URL)('outbox relay', () => {
       comment: async () => ({ url: '', reused: false }),
       openPullRequest: async () => ({ number: 1, url: '', reused: false }),
       mergePullRequest: async () => {},
+      requestMerge: async () => ({ number: 1, url: '', merged: false }),
+      pullRequestStatus: async () => null,
       openFindings: async () => [],
       createIssue: async (issue: unknown) => {
         created.push(issue);
@@ -203,6 +205,8 @@ describe.skipIf(!TEST_DATABASE_URL)('outbox relay', () => {
         return { number: 12, url: 'pr-12', reused: false };
       },
       mergePullRequest: async () => {},
+      requestMerge: async () => ({ number: 1, url: '', merged: false }),
+      pullRequestStatus: async () => null,
       createIssue: async () => ({ number: 1, url: 'issue-1', reused: false }),
       openFindings: async () => [],
     };

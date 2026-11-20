@@ -38,8 +38,11 @@ enforced:
     measured_from: diff
 
   merge_policy:
-    # Every pull request waits for a person's approval. The factory never merges.
-    auto_merge_risk_levels: []
+    # Work that passed every gate ships without a person when its final risk is
+    # one of these (packages/domain/src/delivery.ts AUTO_MERGE_RISK_LEVELS):
+    # the factory asks GitHub to merge once the target's required checks pass.
+    # High risk (auth, data, payments, platform, migrations) waits for the owner.
+    auto_merge_risk_levels: [low, medium]
 
 planned:
   gates:
@@ -51,8 +54,9 @@ planned:
     ai_review:
       reviewer_must_differ_from_implementer: true
       can_override_failing_gate: false   # a reviewer verdict never turns a red gate green
-  merge_policy:
-    auto_merge_risk_levels: [low]        # once low-risk work has a track record of no rollbacks
+  delivery:
+    post_deploy_check: tester            # crawl production after every deploy
+    revert_on_confirmed_finding: true    # a confirmed finding opens a revert the factory merges
   chatbot_evals:                         # target app, once the chatbot exists
     golden_set_per_demo_company: true
     min_answer_accuracy: 0.90

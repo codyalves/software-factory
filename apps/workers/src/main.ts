@@ -3,7 +3,7 @@ import { hostname } from 'node:os';
 import Anthropic from '@anthropic-ai/sdk';
 import { createDb, FactoryControl, RunStore, StepQueue } from '@factory/db';
 import { ClaudeDecisionModel, loadPrompt } from '@factory/decisions';
-import { GitHubAppAuth, gitHubRepoAccess, parsePrivateKey } from '@factory/github';
+import { GitHubAppAuth, GitHubForge, gitHubRepoAccess, parsePrivateKey } from '@factory/github';
 import { z } from 'zod';
 import {
   ClaudeCodeImplementer,
@@ -68,18 +68,19 @@ const decisionModel = config.ANTHROPIC_API_KEY
     })
   : null;
 
+const appKey =
+  config.GITHUB_APP_PRIVATE_KEY ??
+  (config.GITHUB_APP_PRIVATE_KEY_FILE ? readFileSync(config.GITHUB_APP_PRIVATE_KEY_FILE, 'utf8') : undefined);
+const appAuth =
+  config.GITHUB_APP_ID && appKey
+    ? new GitHubAppAuth({ appId: config.GITHUB_APP_ID, privateKey: parsePrivateKey(appKey) })
+    : null;
+
 function repoAccess(): RepoAccess | null {
   if (config.LOCAL_REPOS) {
     return localRepoAccess(z.record(z.string(), z.string()).parse(JSON.parse(config.LOCAL_REPOS)));
   }
-  const key =
-    config.GITHUB_APP_PRIVATE_KEY ??
-    (config.GITHUB_APP_PRIVATE_KEY_FILE
-      ? readFileSync(config.GITHUB_APP_PRIVATE_KEY_FILE, 'utf8')
-      : undefined);
-  return config.GITHUB_APP_ID && key
-    ? gitHubRepoAccess(new GitHubAppAuth({ appId: config.GITHUB_APP_ID, privateKey: parsePrivateKey(key) }))
-    : null;
+  return appAuth ? gitHubRepoAccess(appAuth) : null;
 }
 
 const access = repoAccess();
@@ -102,6 +103,8 @@ const handlers = createHandlers({
               bin: config.CLAUDE_BIN,
             })
           : null,
+        // Local repositories have no pull requests to watch.
+        forge: appAuth && !config.LOCAL_REPOS ? new GitHubForge({ auth: appAuth }) : null,
       }
     : null,
 });

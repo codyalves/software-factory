@@ -1,0 +1,54 @@
+# ADR 0007: The factory ships to production itself
+
+Status: accepted (merge policy); planned (post-deploy check and revert)
+
+## Context
+
+Until now every factory pull request stopped in Reviewing and waited for a
+person to merge it. That made the owner the bottleneck for work the gates had
+already judged, and it split his attention between two kinds of review: the
+factory's code and policy, and each change it produced.
+
+The owner's goal is the opposite: he reviews the factory (its code, its gates
+and this policy, all protected by CODEOWNERS) and the factory delivers to the
+target continuously while it runs.
+
+## Decision
+
+**Risk decides who merges.** Work that passes every gate goes to Merging when
+its final risk (the higher of triage's prediction and what the diff touched)
+is low or medium, and to Reviewing, held for the owner, when it is high. The
+rule is `deliveryDecision` in `packages/domain/src/delivery.ts`; the levels
+are `AUTO_MERGE_RISK_LEVELS`, pinned to `gates/gates.yaml` by `policy.test.ts`.
+Changing either needs the owner's review.
+
+**GitHub merges, after the target's own CI.** The factory never merges a pull
+request whose checks have not passed. For work in Merging it opens the pull
+request and, through the outbox, turns on GitHub auto-merge, so GitHub merges
+only once the target branch's required checks pass. If the pull request can
+already merge, the factory merges it only after confirming the checks passed.
+The target's `main` requires those checks and no human review, so neither the
+factory nor anyone else can merge red work.
+
+**Watching is a step; the result is a transition.** A worker step (`merge`)
+watches the pull request until GitHub merges it, a check fails, or it is
+closed. The orchestrator applies the result: Merging -> Merged, with the merge
+commit in the audit log (`delivery.merged`), or Escalated with a comment
+saying why (`delivery.failed`). A watch that runs out of time is transient and
+retried by the queue like any other step; when its attempts are spent, a
+person takes over.
+
+**The state machine allows Gating -> Merging.** For low and medium risk the
+merge policy is the review. Reviewing now means one thing: a person must look.
+
+## Consequences
+
+- The owner approves pull requests on the factory, not on the target.
+- Every shipped change still traces to its issue, criteria, tests, gates and
+  merge commit, in one hash-chained record.
+- A wrong merge is now possible without a person in the loop, so the next
+  step is planned in `gates.yaml`: after each production deploy the tester
+  crawls the live site, and a confirmed finding files an issue and opens a
+  revert that the factory merges.
+- High-risk work still waits. If held pull requests pile up, that is a signal
+  to split issues or adjust risk paths, not to widen the policy quietly.

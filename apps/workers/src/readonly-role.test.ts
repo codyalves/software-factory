@@ -51,7 +51,7 @@ describe.skipIf(!TEST_DATABASE_URL)('the dashboard read-only role', () => {
       try {
         const reports = new ReportStore(asDashboard.db);
         expect(await reports.listRuns()).toHaveLength(1);
-        expect((await reports.runReport(runId))?.state).toBe('Reviewing');
+        expect((await reports.runReport(runId))?.state).toBe('Merged');
         expect(await reports.traceMatrix()).toHaveLength(1);
         expect((await reports.auditSummary()).problems).toEqual([]);
         expect((await new FactoryControl(asDashboard.db).status()).paused).toBe(false);

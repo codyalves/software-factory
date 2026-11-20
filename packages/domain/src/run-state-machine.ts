@@ -28,7 +28,9 @@ const FORWARD: Readonly<Partial<Record<RunState, readonly RunState[]>>> = {
   Implementing: ['Gating'],
   // A failed gate or a rejecting review goes back to Implementing with the
   // failure as input. That is agent iteration, not an infrastructure retry.
-  Gating: ['Reviewing', 'Implementing'],
+  // Passing work goes to Merging when the merge policy lets the factory merge
+  // it (delivery.ts deliveryDecision), and to Reviewing when a person must.
+  Gating: ['Reviewing', 'Merging', 'Implementing'],
   Reviewing: ['Merging', 'Implementing'],
   Merging: ['Merged'],
 };

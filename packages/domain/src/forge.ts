@@ -1,3 +1,5 @@
+import type { PullRequestStatus } from './delivery.ts';
+
 /** An issue as the factory sees it, independent of the git host. */
 export interface ForgeIssue {
   readonly repo: string;
@@ -41,6 +43,12 @@ export interface IssueDraft {
   readonly mayAlreadyExist: boolean;
 }
 
+export interface MergeRequest {
+  readonly repo: string;
+  /** The factory branch whose pull request should merge. */
+  readonly head: string;
+}
+
 export interface OpenFinding {
   readonly number: number;
   readonly url: string;
@@ -57,6 +65,14 @@ export interface ForgeAdapter {
   /** Opens a pull request, or returns the one already open for `head` on a retry. */
   openPullRequest(pr: PullRequestDraft): Promise<{ number: number; url: string; reused: boolean }>;
   mergePullRequest(repo: string, pullNumber: number): Promise<void>;
+  /**
+   * Asks the host to merge the pull request for `head` once the base branch's
+   * required checks pass (GitHub auto-merge), or merges it now if they already
+   * have. Safe to repeat.
+   */
+  requestMerge(request: MergeRequest): Promise<{ number: number; url: string; merged: boolean }>;
+  /** The pull request for `head` and its checks, or null if none exists yet. */
+  pullRequestStatus(repo: string, head: string): Promise<PullRequestStatus | null>;
   /** Files an issue, or returns the open one with the same fingerprint on a retry. */
   createIssue(issue: IssueDraft): Promise<{ number: number; url: string; reused: boolean }>;
   /** Open issues the tester filed, by fingerprint, for deduplication. */
