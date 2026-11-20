@@ -7,6 +7,10 @@ updates:
     groups:
       dev-tooling:
         patterns: ["@biomejs/*", "@types/*", "typescript", "vitest"]
+      # playwright and @playwright/test must move together: with one bumped
+      # alone, the tester's repro tests cannot run (seen in #33 and #34).
+      playwright:
+        patterns: ["playwright", "@playwright/*", "@axe-core/playwright"]
 
   - package-ecosystem: github-actions
     directory: /
