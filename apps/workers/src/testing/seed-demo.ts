@@ -87,7 +87,7 @@ try {
     },
     {
       issue: issue(5, 'Write my essay on the French Revolution', 'Need 1500 words by Friday, MLA format.'),
-      answers: { ...CLEAR_ANSWERS, issue_type: ['reject', 0.97] as const },
+      answers: { ...CLEAR_ANSWERS, actionable: ['no', 0.97] as const },
       implementer: scripted([fixYear]),
     },
     {

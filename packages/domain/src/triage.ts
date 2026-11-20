@@ -1,6 +1,6 @@
 import type { Decision, DecisionQuestion } from './decisions.ts';
 
-export const ISSUE_TYPES = ['bug', 'feature', 'chore', 'reject'] as const;
+export const ISSUE_TYPES = ['bug', 'feature', 'chore'] as const;
 export const YES_NO = ['yes', 'no'] as const;
 export const RISK_TIERS = ['low', 'medium', 'high'] as const;
 
@@ -51,10 +51,25 @@ export const RISK_QUESTIONS = {
   },
 } as const satisfies Record<string, DecisionQuestion & { tier: Exclude<RiskTier, 'low'> }>;
 
+/**
+ * Whether the factory should work on this at all. The only triage question
+ * that can stop work before the spec check: an unsure answer goes to a person.
+ */
+export const ACTIONABLE_QUESTION = {
+  name: 'actionable',
+  instructions:
+    'Is this actionable software work for this product: a change someone could make to its code, tests, content or styling? Answer "no" if it is not software work, is not about this product, is spam, or asks for something unsafe or harmful, such as weakening security, hiding access or exfiltrating data.',
+  options: YES_NO,
+} as const satisfies DecisionQuestion;
+
+/**
+ * What kind of work it is. Recorded for reporting only: bugs, features and
+ * chores all go through the same loop, so an unsure type never stops work.
+ */
 export const ISSUE_TYPE_QUESTION = {
   name: 'issue_type',
   instructions:
-    'What kind of work is this issue? "reject" if it is not actionable, not software work, or asks for something unsafe.',
+    'What kind of work is this issue? "bug" if something does not work as intended; "feature" if it adds to or changes what the product does or how it looks; "chore" if it is upkeep users do not see, such as tests, refactoring or dependencies. When two fit, give the closer one.',
   options: ISSUE_TYPES,
 } as const satisfies DecisionQuestion;
 
@@ -65,8 +80,9 @@ export const SPEC_READY_QUESTION = {
   options: YES_NO,
 } as const satisfies DecisionQuestion;
 
-/** Every question triage asks, in a stable order: type, spec, then each risk factor. */
+/** Every question triage asks, in a stable order: actionable, type, spec, then each risk factor. */
 export const TRIAGE_QUESTIONS: readonly DecisionQuestion[] = [
+  ACTIONABLE_QUESTION,
   ISSUE_TYPE_QUESTION,
   SPEC_READY_QUESTION,
   ...Object.values(RISK_QUESTIONS),
@@ -91,9 +107,10 @@ export interface TriageOutcome {
  * Turns the triage decisions into the run's next state. Pure and
  * deterministic: models answer the questions, this code decides.
  *
- * Low-confidence fallbacks: an unsure issue type escalates to a human, an
- * unsure spec counts as not ready, and an unsure "no" to a risk question
- * counts as "yes". The tier is the highest tier among the "yes" answers.
+ * Low-confidence fallbacks: an unsure "actionable" escalates to a person,
+ * an unsure issue type is recorded and changes nothing, an unsure spec
+ * counts as not ready, and an unsure "no" to a risk question counts as
+ * "yes". The tier is the highest tier among the "yes" answers.
  */
 export function triageOutcome(decisions: readonly Decision[], threshold: number): TriageOutcome {
   const find = (question: DecisionQuestion): { choice: string; confident: boolean } => {
@@ -104,6 +121,7 @@ export function triageOutcome(decisions: readonly Decision[], threshold: number)
     return { choice: decision.choice, confident: decision.probability >= threshold };
   };
 
+  const actionable = find(ACTIONABLE_QUESTION);
   const issueType = find(ISSUE_TYPE_QUESTION);
   const specReady = find(SPEC_READY_QUESTION);
 
@@ -123,7 +141,11 @@ export function triageOutcome(decisions: readonly Decision[], threshold: number)
     }
   }
 
-  if (issueType.choice === 'reject' && issueType.confident) {
+  if (!issueType.confident) {
+    fallbacks.push(`issue_type ${issueType.choice} below confidence threshold; recorded only`);
+  }
+
+  if (actionable.choice === 'no' && actionable.confident) {
     return {
       next: 'Rejected',
       riskTier,
@@ -135,16 +157,16 @@ export function triageOutcome(decisions: readonly Decision[], threshold: number)
     };
   }
 
-  if (!issueType.confident) {
-    fallbacks.push(`issue_type ${issueType.choice} below confidence threshold; escalated`);
+  if (!actionable.confident) {
+    fallbacks.push(`actionable ${actionable.choice} below confidence threshold; escalated`);
     return {
       next: 'Escalated',
       riskTier,
       riskFactors,
-      reason: 'issue type unclear',
+      reason: 'unclear whether this is actionable software work',
       fallbacks,
       comment:
-        'The software factory could not confidently classify this issue, so a maintainer needs to look at it before work starts.',
+        'The software factory could not tell with confidence whether this is software work it should do, so a maintainer needs to look at it before work starts.',
     };
   }
 

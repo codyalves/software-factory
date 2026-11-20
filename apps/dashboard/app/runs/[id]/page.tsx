@@ -16,6 +16,7 @@ export async function generateMetadata({ params }: Params): Promise<Metadata> {
 
 /** Triage questions in plain words. */
 const QUESTION: Readonly<Record<string, string>> = {
+  actionable: 'Is it software work the factory should do?',
   issue_type: 'What kind of work is it?',
   spec_ready: 'Can it be built and tested as written?',
   risk_auth: 'Does it touch sign-in or access?',
