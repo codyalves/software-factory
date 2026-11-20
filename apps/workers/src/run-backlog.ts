@@ -130,7 +130,7 @@ async function checkProduction(
 
   let deploy: DeployState = 'none';
   for (const deadline = Date.now() + deployWaitMs; Date.now() < deadline; await sleep(20_000)) {
-    deploy = (await forge.deploymentState(repo, mergeSha, production.environment)).state;
+    deploy = (await forge.deploymentState(repo, mergeSha, production)).state;
     if (deploy === 'success' || deploy === 'failure') break;
   }
 

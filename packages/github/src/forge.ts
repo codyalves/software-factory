@@ -47,6 +47,15 @@ interface PullRow {
   head: { sha: string };
 }
 
+function toDeployState(
+  state: string | undefined,
+  url: string | null | undefined,
+): { state: 'pending' | 'success' | 'failure'; url: string | null } {
+  if (state === 'success') return { state: 'success', url: url || null };
+  if (state === 'failure' || state === 'error') return { state: 'failure', url: url || null };
+  return { state: 'pending', url: url || null };
+}
+
 /** Comments scanned for a marker on retry. Retries happen within minutes, so recent pages suffice. */
 const MAX_COMMENT_PAGES = 10;
 
@@ -264,32 +273,39 @@ export class GitHubForge implements ForgeAdapter {
   }
 
   /**
-   * Where the deployment of `sha` to `environment` stands, from the
-   * deployments the hosting provider reports to GitHub (Vercel does).
+   * Where the production deploy of `sha` stands. Hosts report it to GitHub
+   * either as a deployment to `environment` or as a commit status named
+   * `statusContext` (Vercel posts a "Vercel" status unless its GitHub
+   * deployments are turned on); whichever the host uses is read.
    */
   async deploymentState(
     repo: string,
     sha: string,
-    environment: string,
+    signal: { readonly environment: string; readonly statusContext: string },
   ): Promise<{ state: 'none' | 'pending' | 'success' | 'failure'; url: string | null }> {
     const request = await this.#request(repo);
     const deployments = await githubRequest<{ id: number }[]>(
       request,
       'GET',
-      `/repos/${repo}/deployments?sha=${sha}&environment=${encodeURIComponent(environment)}&per_page=5`,
+      `/repos/${repo}/deployments?sha=${sha}&environment=${encodeURIComponent(signal.environment)}&per_page=5`,
     );
     const latest = deployments[0];
-    if (!latest) return { state: 'none', url: null };
-    const statuses = await githubRequest<{ state: string; environment_url?: string }[]>(
+    if (latest) {
+      const statuses = await githubRequest<{ state: string; environment_url?: string }[]>(
+        request,
+        'GET',
+        `/repos/${repo}/deployments/${latest.id}/statuses?per_page=1`,
+      );
+      return toDeployState(statuses[0]?.state, statuses[0]?.environment_url);
+    }
+    // Newest first; the first status with the host's context is its current one.
+    const statuses = await githubRequest<{ context: string; state: string; target_url?: string | null }[]>(
       request,
       'GET',
-      `/repos/${repo}/deployments/${latest.id}/statuses?per_page=1`,
+      `/repos/${repo}/commits/${sha}/statuses?per_page=100`,
     );
-    const status = statuses[0];
-    const url = status?.environment_url || null;
-    if (status?.state === 'success') return { state: 'success', url };
-    if (status?.state === 'failure' || status?.state === 'error') return { state: 'failure', url };
-    return { state: 'pending', url };
+    const status = statuses.find((s) => s.context === signal.statusContext);
+    return status ? toDeployState(status.state, status.target_url) : { state: 'none', url: null };
   }
 
   /**
