@@ -193,6 +193,10 @@ export function recordingForge(
       pull.mergeRequested = true;
       return { number: pull.number, url: pull.url, merged: false };
     },
+    async revertPullRequest({ repo, head }) {
+      sent.push({ kind: 'revert', body: `${repo} ${head}` });
+      return { number: next, url: `https://github.com/${repo}/pull/${next++}`, merged: false };
+    },
     async pullRequestStatus(repo, head) {
       const pull = pulls.get(`${repo}:${head}`);
       if (!pull) return null;

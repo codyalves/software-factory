@@ -410,6 +410,7 @@ describe.skipIf(!TEST_DATABASE_URL)('implement-and-gate loop', () => {
       mergePullRequest: async () => {},
       requestMerge: async () => ({ number: 1, url: '', merged: false }),
       pullRequestStatus: async () => null,
+      revertPullRequest: async () => ({ number: 1, url: '', merged: false }),
       createIssue: async () => ({ number: 1, url: 'issue-1', reused: false }),
       openFindings: async () => [],
     };

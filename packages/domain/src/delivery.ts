@@ -393,3 +393,31 @@ export function mergeProgress(status: PullRequestStatus | null): MergeProgress {
   }
   return { done: false };
 }
+
+/* ---------------------------------------------------------------- after the merge */
+
+export type DeployState = 'none' | 'pending' | 'success' | 'failure';
+
+export type PostDeployDecision =
+  | { readonly action: 'continue'; readonly reason: string }
+  | { readonly action: 'revert'; readonly reason: string }
+  | { readonly action: 'stop'; readonly reason: string };
+
+/**
+ * What happens after shipped work reaches production. The tester crawls the
+ * live site once the deploy succeeds; anything it confirms is new reverts the
+ * change, and the factory stops shipping until a person looks. A deploy that
+ * failed, or never finished, also stops it: shipping more onto a broken
+ * pipeline only hides the cause.
+ */
+export function postDeployDecision(deploy: DeployState, newFindings: number): PostDeployDecision {
+  if (deploy === 'failure') return { action: 'stop', reason: 'the production deploy failed' };
+  if (deploy !== 'success') return { action: 'stop', reason: 'the production deploy did not finish in time' };
+  if (newFindings > 0) {
+    return {
+      action: 'revert',
+      reason: `the tester confirmed ${newFindings} new problem${newFindings === 1 ? '' : 's'} on production`,
+    };
+  }
+  return { action: 'continue', reason: 'production is live and the tester found nothing new' };
+}

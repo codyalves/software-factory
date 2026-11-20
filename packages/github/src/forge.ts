@@ -8,6 +8,7 @@ import {
   type PullRequestDraft,
   type PullRequestStatus,
   parseFingerprint,
+  type RevertRequest,
 } from '@factory/domain';
 import type { GitHubAppAuth } from './app-auth.ts';
 import { type Fetch, ForgeError, githubRequest } from './client.ts';
@@ -25,6 +26,12 @@ const FAILED_CONCLUSIONS = new Set([
   'action_required',
   'startup_failure',
 ]);
+
+const REVERT_PULL_REQUEST = `mutation ($id: ID!, $title: String!, $body: String!) {
+  revertPullRequest(input: { pullRequestId: $id, title: $title, body: $body }) {
+    revertPullRequest { number url headRefName }
+  }
+}`;
 
 const ENABLE_AUTO_MERGE = `mutation ($id: ID!) {
   enablePullRequestAutoMerge(input: { pullRequestId: $id, mergeMethod: SQUASH }) { clientMutationId }
@@ -254,6 +261,69 @@ export class GitHubForge implements ForgeAdapter {
       checks: failing.length > 0 ? 'failure' : pending ? 'pending' : 'success',
       failingChecks: failing,
     };
+  }
+
+  /**
+   * Where the deployment of `sha` to `environment` stands, from the
+   * deployments the hosting provider reports to GitHub (Vercel does).
+   */
+  async deploymentState(
+    repo: string,
+    sha: string,
+    environment: string,
+  ): Promise<{ state: 'none' | 'pending' | 'success' | 'failure'; url: string | null }> {
+    const request = await this.#request(repo);
+    const deployments = await githubRequest<{ id: number }[]>(
+      request,
+      'GET',
+      `/repos/${repo}/deployments?sha=${sha}&environment=${encodeURIComponent(environment)}&per_page=5`,
+    );
+    const latest = deployments[0];
+    if (!latest) return { state: 'none', url: null };
+    const statuses = await githubRequest<{ state: string; environment_url?: string }[]>(
+      request,
+      'GET',
+      `/repos/${repo}/deployments/${latest.id}/statuses?per_page=1`,
+    );
+    const status = statuses[0];
+    const url = status?.environment_url || null;
+    if (status?.state === 'success') return { state: 'success', url };
+    if (status?.state === 'failure' || status?.state === 'error') return { state: 'failure', url };
+    return { state: 'pending', url };
+  }
+
+  /**
+   * Opens a pull request that reverts the merged one for `head`, then asks
+   * GitHub to merge it like any other: once the required checks pass.
+   */
+  async revertPullRequest(input: RevertRequest): Promise<{ number: number; url: string; merged: boolean }> {
+    const original = await this.#pullFor(input.repo, input.head);
+    if (!original?.merged_at) {
+      throw new ForgeError(`${input.repo} ${input.head} has no merged pull request to revert`, {
+        retryable: false,
+      });
+    }
+    // GitHub names the revert branch after the original pull request.
+    const revertHead = `revert-${original.number}-${input.head}`;
+    const existing = input.mayAlreadyExist ? await this.#pullFor(input.repo, revertHead) : null;
+    if (!existing) {
+      const response = await githubRequest<{ errors?: { message: string }[] }>(
+        await this.#request(input.repo),
+        'POST',
+        '/graphql',
+        {
+          query: REVERT_PULL_REQUEST,
+          variables: { id: original.node_id, title: input.title, body: input.body },
+        },
+      );
+      const problem = response.errors?.map((e) => e.message).join('; ');
+      if (problem) {
+        throw new ForgeError(`could not revert ${input.repo}#${original.number}: ${problem}`, {
+          retryable: false,
+        });
+      }
+    }
+    return this.requestMerge({ repo: input.repo, head: revertHead });
   }
 
   /** Every open issue in the repository (not pull requests), for working through a backlog. */

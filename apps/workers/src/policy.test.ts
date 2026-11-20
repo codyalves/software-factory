@@ -6,6 +6,7 @@ import {
   BUILT_IN_GATES,
   DEFAULT_CONFIDENCE_THRESHOLD,
   MAX_IMPLEMENT_ATTEMPTS,
+  postDeployDecision,
 } from '@factory/domain';
 import { sql } from 'kysely';
 import { describe, expect, it } from 'vitest';
@@ -30,6 +31,7 @@ const policySchema = z.object({
     gates: z.array(z.string()),
     risk: z.object({ predicted_by: z.literal('triage'), measured_from: z.literal('diff') }),
     merge_policy: z.object({ auto_merge_risk_levels: z.array(z.string()) }),
+    delivery: z.object({ post_deploy_check: z.literal('tester'), revert_on_confirmed_finding: z.boolean() }),
   }),
   planned: z.record(z.string(), z.unknown()),
 });
@@ -56,6 +58,12 @@ describe('gates/gates.yaml', () => {
 
   it('lists exactly the built-in gates', async () => {
     expect((await policy()).gates).toEqual([...BUILT_IN_GATES]);
+  });
+
+  it('reverts on a confirmed production finding exactly when it says so', async () => {
+    const { delivery } = await policy();
+
+    expect(postDeployDecision('success', 1).action === 'revert').toBe(delivery.revert_on_confirmed_finding);
   });
 
   it('lists exactly the risk levels the factory merges without a person', async () => {
