@@ -9,7 +9,7 @@
     "@factory/domain": "workspace:*",
     "@factory/github": "workspace:*",
     "kysely": "0.29.8",
-    "playwright": "1.63.0",
+    "playwright": "1.65.0",
     "zod": "4.6.7"
   },
   "devDependencies": {
