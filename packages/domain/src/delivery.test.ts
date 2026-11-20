@@ -12,6 +12,7 @@ import {
   measureRisk,
   mergeProgress,
   type PullRequestStatus,
+  postDeployDecision,
   protectedPathsGate,
   SCOPE_LINE,
   secretScan,
@@ -296,5 +297,24 @@ describe('mergeProgress', () => {
       reason: "the target's CI failed: e2e",
     });
     expect(mergeProgress(status({ state: 'closed' }))).toMatchObject({ done: true, merged: false });
+  });
+});
+
+describe('postDeployDecision', () => {
+  it('carries on once production is live and the tester found nothing new', () => {
+    expect(postDeployDecision('success', 0).action).toBe('continue');
+  });
+
+  it('reverts when the tester confirms a new problem on production', () => {
+    expect(postDeployDecision('success', 2)).toEqual({
+      action: 'revert',
+      reason: 'the tester confirmed 2 new problems on production',
+    });
+  });
+
+  it('stops shipping when the deploy failed or never finished', () => {
+    expect(postDeployDecision('failure', 0).action).toBe('stop');
+    expect(postDeployDecision('pending', 0).action).toBe('stop');
+    expect(postDeployDecision('none', 0).action).toBe('stop');
   });
 });

@@ -394,3 +394,81 @@ describe('GitHubForge.openIssues', () => {
     ]);
   });
 });
+
+describe('GitHubForge after a merge', () => {
+  const repo = 'codyalves/target';
+  const forgeFor = (github: ReturnType<typeof fakeGitHub>) => new GitHubForge({ auth, fetch: github.fetch });
+  const DEPLOYMENTS = `/repos/${repo}/deployments?sha=beef&environment=Production&per_page=5`;
+
+  it('reports a production deployment as pending, then live with its URL', async () => {
+    let state = 'in_progress';
+    const github = fakeGitHub({
+      [`GET ${DEPLOYMENTS}`]: () => json([{ id: 5 }]),
+      [`GET /repos/${repo}/deployments/5/statuses?per_page=1`]: () =>
+        json([{ state, environment_url: 'https://target.example' }]),
+    });
+
+    expect(await forgeFor(github).deploymentState(repo, 'beef', 'Production')).toEqual({
+      state: 'pending',
+      url: 'https://target.example',
+    });
+    state = 'success';
+    expect((await forgeFor(github).deploymentState(repo, 'beef', 'Production')).state).toBe('success');
+  });
+
+  it('reports no deployment until the host has started one', async () => {
+    const github = fakeGitHub({ [`GET ${DEPLOYMENTS}`]: () => json([]) });
+
+    expect(await forgeFor(github).deploymentState(repo, 'beef', 'Production')).toEqual({
+      state: 'none',
+      url: null,
+    });
+  });
+
+  it('reverts a merged pull request and asks GitHub to merge the revert', async () => {
+    const head = 'factory/9-abc';
+    const pullsFor = (h: string) =>
+      `GET /repos/${repo}/pulls?state=all&head=${encodeURIComponent(`codyalves:${h}`)}`;
+    const github = fakeGitHub({
+      [pullsFor(head)]: () =>
+        json([
+          {
+            number: 12,
+            node_id: 'PR_12',
+            html_url: 'pr-12',
+            state: 'closed',
+            merged_at: 'x',
+            head: { sha: 'a' },
+          },
+        ]),
+      [pullsFor('revert-12-factory/9-abc')]: () =>
+        json([
+          {
+            number: 13,
+            node_id: 'PR_13',
+            html_url: 'pr-13',
+            state: 'open',
+            merged_at: null,
+            head: { sha: 'b' },
+          },
+        ]),
+      'POST /graphql': (request) =>
+        JSON.stringify(request.body).includes('revertPullRequest')
+          ? json({ data: { revertPullRequest: { revertPullRequest: { number: 13 } } } })
+          : json({ data: { enablePullRequestAutoMerge: { clientMutationId: null } } }),
+    });
+
+    const result = await forgeFor(github).revertPullRequest({
+      repo,
+      head,
+      title: 'Revert #12',
+      body: 'Production check failed.',
+      mayAlreadyExist: false,
+    });
+
+    expect(result).toEqual({ number: 13, url: 'pr-13', merged: false });
+    const mutations = github.requests.filter((r) => r.path === '/graphql').map((r) => r.body);
+    expect(mutations[0]).toMatchObject({ variables: { id: 'PR_12', title: 'Revert #12' } });
+    expect(mutations[1]).toMatchObject({ variables: { id: 'PR_13' } });
+  });
+});

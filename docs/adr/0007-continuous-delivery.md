@@ -1,6 +1,6 @@
 # ADR 0007: The factory ships to production itself
 
-Status: accepted (merge policy); planned (post-deploy check and revert)
+Status: accepted
 
 ## Context
 
@@ -52,9 +52,13 @@ pause stops a run. The owner still decides when it runs.
 - The owner approves pull requests on the factory, not on the target.
 - Every shipped change still traces to its issue, criteria, tests, gates and
   merge commit, in one hash-chained record.
-- A wrong merge is now possible without a person in the loop, so the next
-  step is planned in `gates.yaml`: after each production deploy the tester
-  crawls the live site, and a confirmed finding files an issue and opens a
-  revert that the factory merges.
+- A wrong merge is now possible without a person in the loop, so the backlog
+  runner checks production after each shipped run (`postDeployDecision`): it
+  waits for the host's deploy of the merge commit, runs the tester on the
+  live site, and if the tester confirms anything new it files the finding,
+  reverts the change through the outbox (`pull_request.revert`, merged like
+  any factory change) and stops. A deploy that fails or never finishes also
+  stops it. Each outcome is in the run's audit log (`delivery.verified` or
+  `delivery.check_failed`).
 - High-risk work still waits. If held pull requests pile up, that is a signal
   to split issues or adjust risk paths, not to widen the policy quietly.

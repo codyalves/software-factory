@@ -44,6 +44,14 @@ enforced:
     # High risk (auth, data, payments, platform, migrations) waits for the owner.
     auto_merge_risk_levels: [low, medium]
 
+  delivery:
+    # factory-backlog, after each shipped run (delivery.ts postDeployDecision):
+    # wait for the production deploy of the merge commit, then run the tester
+    # on the live site. A new confirmed finding reverts the change through the
+    # outbox and stops the session; so does a deploy that fails or never ends.
+    post_deploy_check: tester
+    revert_on_confirmed_finding: true
+
 planned:
   gates:
     coverage:
@@ -54,9 +62,6 @@ planned:
     ai_review:
       reviewer_must_differ_from_implementer: true
       can_override_failing_gate: false   # a reviewer verdict never turns a red gate green
-  delivery:
-    post_deploy_check: tester            # crawl production after every deploy
-    revert_on_confirmed_finding: true    # a confirmed finding opens a revert the factory merges
   chatbot_evals:                         # target app, once the chatbot exists
     golden_set_per_demo_company: true
     min_answer_accuracy: 0.90

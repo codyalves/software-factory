@@ -49,6 +49,15 @@ export interface MergeRequest {
   readonly head: string;
 }
 
+export interface RevertRequest {
+  readonly repo: string;
+  /** The factory branch whose merged pull request is reverted. */
+  readonly head: string;
+  readonly title: string;
+  readonly body: string;
+  readonly mayAlreadyExist: boolean;
+}
+
 export interface OpenFinding {
   readonly number: number;
   readonly url: string;
@@ -71,6 +80,12 @@ export interface ForgeAdapter {
    * have. Safe to repeat.
    */
   requestMerge(request: MergeRequest): Promise<{ number: number; url: string; merged: boolean }>;
+  /**
+   * Opens a pull request reverting the merged one for `head` and asks the host
+   * to merge it once the required checks pass. On a retry, finds the revert an
+   * earlier attempt opened.
+   */
+  revertPullRequest(input: RevertRequest): Promise<{ number: number; url: string; merged: boolean }>;
   /** The pull request for `head` and its checks, or null if none exists yet. */
   pullRequestStatus(repo: string, head: string): Promise<PullRequestStatus | null>;
   /** Files an issue, or returns the open one with the same fingerprint on a retry. */

@@ -32,6 +32,14 @@ const targetSchema = z.object({
     .object({ high: z.array(z.string().min(1)).default([]), medium: z.array(z.string().min(1)).default([]) })
     .default({ high: [], medium: [] }),
   commandTimeoutMs: z.number().int().positive().default(600_000),
+  /** Where the target runs once merged, checked by the tester after each deploy. */
+  production: z
+    .object({
+      url: z.url(),
+      /** The deployment environment the host reports to GitHub (Vercel: "Production"). */
+      environment: z.string().min(1).default('Production'),
+    })
+    .optional(),
 });
 
 export type TargetConfig = z.infer<typeof targetSchema>;
