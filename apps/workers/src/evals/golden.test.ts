@@ -33,6 +33,7 @@ describe('labelProblems', () => {
     title: 't',
     body: 'b',
     labels: {
+      actionable: ['yes'],
       issue_type: ['feature'],
       spec_ready: ['yes'],
       risk_auth: ['no'],

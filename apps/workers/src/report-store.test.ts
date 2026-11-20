@@ -55,7 +55,7 @@ describe.skipIf(!TEST_DATABASE_URL)('ReportStore over real runs', () => {
       db: t.db,
       remote,
       issue: issue(2, 'Write my essay', 'Need 1500 words on the French Revolution.'),
-      answers: { ...CLEAR_ANSWERS, issue_type: ['reject', 0.96] },
+      answers: { ...CLEAR_ANSWERS, actionable: ['no', 0.96] },
       implementer: scripted([fixYear]),
     });
 
@@ -71,8 +71,8 @@ describe.skipIf(!TEST_DATABASE_URL)('ReportStore over real runs', () => {
       budgetUsd: 5,
       pullRequestUrl: expect.stringMatching(/^https:\/\/github.com\/codyalves\/target\/pull\/\d+$/),
     });
-    // Two implement attempts at $0.25 plus seven triage answers.
-    expect(runs[1]?.spentUsd).toBeCloseTo(0.5 + 7 * 0.000105, 6);
+    // Two implement attempts at $0.25 plus eight triage answers.
+    expect(runs[1]?.spentUsd).toBeCloseTo(0.5 + 8 * 0.000105, 6);
     expect(runs[0]).toMatchObject({ state: 'Rejected', implementAttempts: 0, pullRequestUrl: null });
   });
 
@@ -92,8 +92,8 @@ describe.skipIf(!TEST_DATABASE_URL)('ReportStore over real runs', () => {
       'Gating>Merging',
       'Merging>Merged',
     ]);
-    expect(report?.decisions).toHaveLength(7);
-    expect(report?.decisions[0]).toMatchObject({
+    expect(report?.decisions).toHaveLength(8);
+    expect(report?.decisions[1]).toMatchObject({
       question: 'issue_type',
       choice: 'feature',
       probability: 0.94,
@@ -135,7 +135,7 @@ describe.skipIf(!TEST_DATABASE_URL)('ReportStore over real runs', () => {
     ]);
     expect(report?.costByModel).toEqual([
       { model: 'claude-sonnet-5-5', usd: 0.5, calls: 2 },
-      { model: 'claude-haiku-5-5', usd: expect.closeTo(7 * 0.000105, 6), calls: 7 },
+      { model: 'claude-haiku-5-5', usd: expect.closeTo(8 * 0.000105, 6), calls: 8 },
     ]);
     expect(report?.messages).toEqual([
       { kind: 'pull_request.open', status: 'sent', url: report?.pullRequestUrl, error: null },

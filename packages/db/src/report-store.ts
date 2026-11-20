@@ -229,12 +229,16 @@ export class ReportStore {
       reason: text(e.p.reason),
     }));
 
-    // A re-triaged run keeps every decision in the log; show the latest triage.
+    // A re-triaged run keeps every decision in the log; show the latest
+    // triage's: the decisions between the previous triage and the last one.
+    // (Counting them would break whenever triage gains or loses a question.)
     const triageEvents = ofType('triage.completed');
     const lastTriage = triageEvents.at(-1);
+    const previousTriage = triageEvents.at(-2);
     const decisions = ofType('decision.made')
-      .filter((e) => !lastTriage || e.seq < lastTriage.seq)
-      .slice(-7)
+      .filter(
+        (e) => (!lastTriage || e.seq < lastTriage.seq) && (!previousTriage || e.seq > previousTriage.seq),
+      )
       .map((e) => ({
         question: text(e.p.question),
         choice: text(e.p.choice),

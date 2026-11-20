@@ -21,6 +21,7 @@ function decision(question: string, choice: string, probability: number): Decisi
 /** A full set of triage answers: a clear, low-risk feature unless overridden. */
 function answers(overrides: Record<string, readonly [string, number]> = {}): Decision[] {
   const base: Record<string, readonly [string, number]> = {
+    actionable: ['yes', 0.95],
     issue_type: ['feature', 0.95],
     spec_ready: ['yes', 0.9],
     ...Object.fromEntries(Object.values(RISK_QUESTIONS).map((q) => [q.name, ['no', 0.95] as const])),
@@ -79,16 +80,16 @@ describe.skipIf(!TEST_DATABASE_URL)('triage through the orchestrator', () => {
     expect(await outbox(t)).toEqual([]);
 
     const events = await new AuditStore(t.db).readAll();
-    expect(events.map((e) => e.type).slice(-10)).toEqual([
+    expect(events.map((e) => e.type).slice(-11)).toEqual([
       'step.succeeded',
-      ...Array(7).fill('decision.made'),
+      ...Array(8).fill('decision.made'),
       'triage.completed',
       'run.state_changed',
     ]);
     const firstDecision = JSON.parse(events.find((e) => e.type === 'decision.made')?.payload ?? '{}');
     expect(firstDecision).toMatchObject({
-      question: 'issue_type',
-      choice: 'feature',
+      question: 'actionable',
+      choice: 'yes',
       confident: true,
       threshold: 0.8,
     });

@@ -119,6 +119,7 @@ export type Answers = Readonly<Record<string, readonly [string, number]>>;
 
 /** A clear, well-specified, low-risk feature, unless overridden. */
 export const CLEAR_ANSWERS: Answers = {
+  actionable: ['yes', 0.96],
   issue_type: ['feature', 0.94],
   spec_ready: ['yes', 0.91],
   risk_auth: ['no', 0.97],

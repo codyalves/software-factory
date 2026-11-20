@@ -23,6 +23,7 @@ const noRisk: Answers = Object.fromEntries(
 );
 
 const clearFeature: Answers = {
+  actionable: ['yes', 0.95],
   issue_type: ['feature', 0.95],
   spec_ready: ['yes', 0.9],
   ...noRisk,
@@ -32,11 +33,11 @@ const outcome = (overrides: Answers = {}) =>
   triageOutcome(decisions({ ...clearFeature, ...overrides }), THRESHOLD);
 
 describe('triage questions', () => {
-  it('asks type, spec and every risk factor, each with a unique name', () => {
+  it('asks actionable, type, spec and every risk factor, each with a unique name', () => {
     const names = TRIAGE_QUESTIONS.map((q) => q.name);
 
-    expect(names.slice(0, 2)).toEqual(['issue_type', 'spec_ready']);
-    expect(names).toHaveLength(2 + Object.keys(RISK_QUESTIONS).length);
+    expect(names.slice(0, 3)).toEqual(['actionable', 'issue_type', 'spec_ready']);
+    expect(names).toHaveLength(3 + Object.keys(RISK_QUESTIONS).length);
     expect(new Set(names).size).toBe(names.length);
   });
 
@@ -93,18 +94,28 @@ describe('triageOutcome', () => {
     });
   });
 
-  it('rejects a confidently rejected issue and says so on the issue', () => {
-    const rejected = outcome({ issue_type: ['reject', 0.9] });
+  it('rejects work that is confidently not actionable, and says so on the issue', () => {
+    const rejected = outcome({ actionable: ['no', 0.9] });
 
     expect(rejected.next).toBe('Rejected');
     expect(rejected.comment).toContain('will not work on this issue');
   });
 
-  it('escalates instead of rejecting when the rejection is unsure', () => {
-    const unsure = outcome({ issue_type: ['reject', 0.6] });
+  it('escalates instead of rejecting, or starting, when "actionable" is unsure', () => {
+    expect(outcome({ actionable: ['no', 0.6] })).toMatchObject({
+      next: 'Escalated',
+      fallbacks: ['actionable no below confidence threshold; escalated'],
+    });
+    expect(outcome({ actionable: ['yes', 0.6] }).next).toBe('Escalated');
+  });
 
-    expect(unsure.next).toBe('Escalated');
-    expect(unsure.fallbacks).toEqual(['issue_type reject below confidence threshold; escalated']);
+  it('records an unsure issue type and carries on, since every type takes the same path', () => {
+    // A styling change can read as a feature or a chore; either way the loop is the same.
+    expect(outcome({ issue_type: ['feature', 0.6] })).toMatchObject({
+      next: 'Planning',
+      reason: 'triaged as feature, low risk',
+      fallbacks: ['issue_type feature below confidence threshold; recorded only'],
+    });
   });
 
   it('asks for testable criteria when the spec is not ready', () => {

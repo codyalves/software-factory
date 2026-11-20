@@ -7,17 +7,24 @@ issues safely.
 
 ## What triage asks
 
-Seven closed questions, each answered with one option and a probability:
+Eight closed questions, each answered with one option and a probability:
 
 | Question | Options | Used for |
 | --- | --- | --- |
-| `issue_type` | bug, feature, chore, reject | Reject non-software or unsafe requests |
+| `actionable` | yes, no | Reject non-software or unsafe requests; unsure goes to a person |
+| `issue_type` | bug, feature, chore | Reporting only; an unsure type never stops work |
 | `spec_ready` | yes, no | Ask the author for testable criteria |
 | `risk_auth` | yes, no | High risk: authentication, sessions, secrets, access |
 | `risk_data` | yes, no | High risk: schema, stored or personal data |
 | `risk_payments` | yes, no | High risk: payments, billing, pricing |
 | `risk_platform` | yes, no | High risk: dependencies, CI, deploy, gates, the factory |
 | `risk_existing_behavior` | yes, no | Medium risk: behavior users or code rely on |
+
+Rejecting used to be an option of `issue_type`, so a confident "this is
+work" with an unsure feature-or-chore split escalated it anyway: a styling
+issue stopped at 0.60 "feature" (factory-target-app#13). Every type takes the
+same path, so the only question that can stop work at intake is now
+`actionable`, and the type is recorded for reporting.
 
 Risk used to be one low/medium/high question, and the model was rarely
 confident about it (0.6 for a plain contact page), so almost everything fell

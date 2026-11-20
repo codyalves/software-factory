@@ -6,6 +6,7 @@ import { renderCaseDetails, renderReport, summarize } from './score.ts';
 const THRESHOLD = 0.8;
 
 const labels = {
+  actionable: ['yes'],
   issue_type: ['feature'],
   spec_ready: ['yes'],
   risk_auth: ['no'],
@@ -30,6 +31,7 @@ function golden(overrides: Partial<GoldenCase> = {}): GoldenCase {
 
 function run(g: GoldenCase, answers: Record<string, readonly [string, number]> = {}) {
   const all: Record<string, readonly [string, number]> = {
+    actionable: ['yes', 0.95],
     issue_type: ['feature', 0.95],
     spec_ready: ['yes', 0.95],
     ...Object.fromEntries(Object.values(RISK_QUESTIONS).map((q) => [q.name, ['no', 0.95] as const])),
