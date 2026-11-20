@@ -41,6 +41,12 @@ person takes over.
 **The state machine allows Gating -> Merging.** For low and medium risk the
 merge policy is the review. Reviewing now means one thing: a person must look.
 
+**Working through a backlog.** The `factory-backlog` workflow runs the
+oldest open issue labeled `factory:ready` whose "Depends on #N" issues are
+closed, waits for it to ship, be held or escalate, and takes the next. It
+stops when nothing is ready, at its run limit, or when the daily budget or a
+pause stops a run. The owner still decides when it runs.
+
 ## Consequences
 
 - The owner approves pull requests on the factory, not on the target.

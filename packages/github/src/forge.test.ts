@@ -361,3 +361,36 @@ describe('GitHubForge merging', () => {
     });
   });
 });
+
+describe('GitHubForge.openIssues', () => {
+  it('lists open issues with their labels, leaving out pull requests', async () => {
+    const github = fakeGitHub({
+      'GET /repos/codyalves/target/issues?state=open&per_page=100&page=1': () =>
+        json([
+          { number: 8, title: 'Chat box', body: 'Depends on #7', labels: [{ name: 'factory:ready' }] },
+          { number: 9, title: 'A PR', body: '', labels: [], pull_request: {} },
+          { number: 10, title: 'Idea', body: null, labels: ['someday'], user: { login: 'codyalves' } },
+        ]),
+    });
+
+    const issues = await new GitHubForge({ auth, fetch: github.fetch }).openIssues('codyalves/target');
+
+    expect(issues).toEqual([
+      {
+        repo: 'codyalves/target',
+        number: 8,
+        title: 'Chat box',
+        body: 'Depends on #7',
+        labels: ['factory:ready'],
+      },
+      {
+        repo: 'codyalves/target',
+        number: 10,
+        title: 'Idea',
+        body: '',
+        labels: ['someday'],
+        author: 'codyalves',
+      },
+    ]);
+  });
+});

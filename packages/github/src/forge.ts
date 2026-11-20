@@ -256,6 +256,36 @@ export class GitHubForge implements ForgeAdapter {
     };
   }
 
+  /** Every open issue in the repository (not pull requests), for working through a backlog. */
+  async openIssues(repo: string): Promise<ForgeIssue[]> {
+    const found: ForgeIssue[] = [];
+    for (let page = 1; page <= 10; page++) {
+      const issues = await githubRequest<
+        {
+          number: number;
+          title: string;
+          body: string | null;
+          labels: (string | { name?: string })[];
+          pull_request?: unknown;
+          user?: { login?: string } | null;
+        }[]
+      >(await this.#request(repo), 'GET', `/repos/${repo}/issues?state=open&per_page=100&page=${page}`);
+      for (const issue of issues) {
+        if (issue.pull_request) continue;
+        found.push({
+          repo,
+          number: issue.number,
+          title: issue.title,
+          body: issue.body ?? '',
+          labels: issue.labels.map((l) => (typeof l === 'string' ? l : (l.name ?? ''))).filter(Boolean),
+          ...(issue.user?.login ? { author: issue.user.login } : {}),
+        });
+      }
+      if (issues.length < 100) break;
+    }
+    return found;
+  }
+
   /** The most recent pull request for a factory branch, open or not. */
   async #pullFor(repo: string, head: string): Promise<PullRow | null> {
     const owner = repo.split('/')[0];
