@@ -1,0 +1,119 @@
+name: factory-backlog
+
+# Works through the target's backlog until nothing is ready: each open issue
+# labeled factory:ready (oldest first, waiting for any "Depends on #N" to
+# close) gets a full factory run. Low and medium risk work merges and ships
+# once the target's CI passes; high risk is held for the owner. Started by
+# hand only, so it spends API credit only when you choose; the daily budget
+# stops it.
+on:
+  workflow_dispatch:
+    inputs:
+      repo:
+        description: Target repository
+        default: codyalves/factory-target-app
+        required: true
+      label:
+        description: Label that marks an issue ready
+        default: factory:ready
+        required: true
+      max_runs:
+        description: Most issues to run this time
+        default: '5'
+        required: true
+      daily_budget:
+        description: Spend cap for the day, USD
+        default: '3'
+        required: true
+      attempt_budget:
+        description: Claude Code cap per implement attempt, USD
+        default: '1.25'
+        required: true
+
+permissions:
+  contents: read
+
+# One factory run at a time.
+concurrency:
+  group: factory-run
+  cancel-in-progress: false
+
+jobs:
+  factory-backlog:
+    runs-on: ubuntu-latest
+    # Each run can wait up to an hour for the target's CI to merge it.
+    timeout-minutes: 340
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: factory
+          POSTGRES_PASSWORD: factory
+          POSTGRES_DB: factory
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U factory"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    # Secret names cannot start with GITHUB_, so the app's secrets are
+    # FACTORY_APP_*; the factory itself reads GITHUB_APP_* from its env.
+    env:
+      # The persistent factory database when FACTORY_DATABASE_URL is set (see
+      # docs/hosting.md); otherwise a throwaway one that ends with the job.
+      DATABASE_URL: ${{ secrets.FACTORY_DATABASE_URL || 'postgres://factory:factory@localhost:5432/factory' }}
+      DATABASE_KIND: ${{ secrets.FACTORY_DATABASE_URL && 'persistent' || 'throwaway' }}
+      ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+      GITHUB_APP_ID: ${{ secrets.FACTORY_APP_ID }}
+      GITHUB_APP_PRIVATE_KEY: ${{ secrets.FACTORY_APP_PRIVATE_KEY }}
+      IMPLEMENT_ATTEMPT_BUDGET_USD: ${{ inputs.attempt_budget }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: pnpm/action-setup@v6
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 26
+          cache: pnpm
+
+      - name: Require the secrets
+        run: |
+          missing=""
+          [ -n "$ANTHROPIC_API_KEY" ] || missing="$missing ANTHROPIC_API_KEY"
+          [ -n "$GITHUB_APP_ID" ] || missing="$missing FACTORY_APP_ID"
+          [ -n "$GITHUB_APP_PRIVATE_KEY" ] || missing="$missing FACTORY_APP_PRIVATE_KEY"
+          if [ -n "$missing" ]; then
+            echo "Missing repository secrets:$missing (see docs/github-app.md)" | tee -a "$GITHUB_STEP_SUMMARY"
+            exit 1
+          fi
+
+      - name: Install
+        run: |
+          pnpm install --frozen-lockfile
+          npm install -g @anthropic-ai/claude-code@2.1.319
+          # The e2e gate installs its own Chromium; the runner image already has
+          # Chrome's system libraries, so nothing is fetched from Ubuntu's servers.
+
+      - name: Work through ${{ inputs.repo }} (${{ inputs.label }})
+        env:
+          REPO: ${{ inputs.repo }}
+          LABEL: ${{ inputs.label }}
+          MAX_RUNS: ${{ inputs.max_runs }}
+          DAILY_BUDGET: ${{ inputs.daily_budget }}
+        run: |
+          set -o pipefail
+          node apps/workers/src/run-backlog.ts --repo "$REPO" --label "$LABEL" \
+            --max-runs "$MAX_RUNS" --daily-budget "$DAILY_BUDGET" --actor "$GITHUB_ACTOR" \
+            --out backlog --summary backlog/summary.md
+          cat backlog/summary.md >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "Database: $DATABASE_KIND" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Keep the audit log
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: factory-backlog-${{ github.run_number }}
+          path: backlog/
+          if-no-files-found: ignore

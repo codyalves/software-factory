@@ -211,9 +211,14 @@ Only when you start it. Nothing is deployed, and nothing runs on a schedule.
   Claude Code itself (`IMPLEMENT_ATTEMPT_BUDGET_USD`, default $1.25).
 - **A single issue, start to finish:** Actions → **factory-run** → Run
   workflow, with the repo and issue number. It triages, implements, gates,
-  comments and opens the PR, then pauses and stops. The report is in the run
+  opens the PR and, for low or medium risk, waits for GitHub to merge it once
+  the target's CI passes; then it pauses and stops. The report is in the run
   summary and the audit log is an artifact. Locally:
   `node apps/workers/src/run-issue.ts --repo owner/name --issue N`.
+- **The whole backlog:** Actions → **factory-backlog** → Run workflow. It runs
+  each open `factory:ready` issue in order, oldest first, skipping any that
+  say "Depends on #N" while #N is open, until nothing is ready, its run limit,
+  or the daily budget. Locally: `node apps/workers/src/run-backlog.ts --repo owner/name`.
 - Workers without `ANTHROPIC_API_KEY` take neither triage nor implement steps.
 - **CI** never calls the Claude API. Unit and integration tests use a fake model.
 - **The triage eval** runs only by hand: Actions → triage-eval → Run workflow

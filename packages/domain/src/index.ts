@@ -1,4 +1,5 @@
 export * from './audit-chain.ts';
+export * from './backlog.ts';
 export * from './canonical-json.ts';
 export * from './decisions.ts';
 export * from './delivery.ts';
