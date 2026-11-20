@@ -7,7 +7,7 @@
     "@factory/db": "workspace:*",
     "@factory/domain": "workspace:*",
     "@factory/github": "workspace:*",
-    "kysely": "0.29.8",
+    "kysely": "0.29.9",
     "zod": "4.6.7"
   }
 }
