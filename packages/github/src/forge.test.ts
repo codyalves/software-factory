@@ -257,3 +257,107 @@ describe('GitHubForge findings', () => {
     expect(github.requests.map((r) => r.method)).toEqual(['GET']);
   });
 });
+
+describe('GitHubForge merging', () => {
+  const repo = 'codyalves/target';
+  const PULLS = `/repos/${repo}/pulls?state=all&head=${encodeURIComponent('codyalves:factory/9-abc')}`;
+  const pull = (over: Record<string, unknown> = {}) => ({
+    number: 12,
+    node_id: 'PR_node',
+    html_url: 'https://github.com/codyalves/target/pull/12',
+    state: 'open',
+    merged_at: null,
+    merge_commit_sha: null,
+    head: { sha: 'f00d' },
+    ...over,
+  });
+  const CHECKS = `/repos/${repo}/commits/f00d/check-runs?per_page=100`;
+  const run = (name: string, status: string, conclusion: string | null) => ({ name, status, conclusion });
+  const forgeFor = (github: ReturnType<typeof fakeGitHub>) => new GitHubForge({ auth, fetch: github.fetch });
+
+  it('turns on auto-merge, so GitHub merges once the required checks pass', async () => {
+    const github = fakeGitHub({
+      [`GET ${PULLS}`]: () => json([pull()]),
+      'POST /graphql': () => json({ data: { enablePullRequestAutoMerge: { clientMutationId: null } } }),
+    });
+
+    const result = await forgeFor(github).requestMerge({ repo, head: 'factory/9-abc' });
+
+    expect(result).toEqual({ number: 12, url: pull().html_url, merged: false });
+    expect(github.requests[1]?.body).toMatchObject({ variables: { id: 'PR_node' } });
+  });
+
+  it('merges straight away when the pull request is already clean and its checks passed', async () => {
+    const github = fakeGitHub({
+      [`GET ${PULLS}`]: () => json([pull()]),
+      'POST /graphql': () => json({ errors: [{ message: 'Pull request is in clean status' }] }),
+      [`GET ${CHECKS}`]: () => json({ check_runs: [run('ci', 'completed', 'success')] }),
+      [`PUT /repos/${repo}/pulls/12/merge`]: () => json({ merged: true }),
+    });
+
+    expect(await forgeFor(github).requestMerge({ repo, head: 'factory/9-abc' })).toMatchObject({
+      merged: true,
+    });
+  });
+
+  it('never merges a clean pull request whose checks have not passed', async () => {
+    const github = fakeGitHub({
+      [`GET ${PULLS}`]: () => json([pull()]),
+      'POST /graphql': () => json({ errors: [{ message: 'Pull request is in clean status' }] }),
+      [`GET ${CHECKS}`]: () => json({ check_runs: [run('ci', 'in_progress', null)] }),
+    });
+
+    const error = await forgeFor(github)
+      .requestMerge({ repo, head: 'factory/9-abc' })
+      .catch((e: unknown) => e);
+
+    expect(error).toBeInstanceOf(ForgeError);
+    expect((error as ForgeError).retryable).toBe(true);
+    expect(github.requests.some((r) => r.method === 'PUT')).toBe(false);
+  });
+
+  it('asks the outbox to retry when the pull request is not open yet', async () => {
+    const github = fakeGitHub({ [`GET ${PULLS}`]: () => json([]) });
+
+    const error = await forgeFor(github)
+      .requestMerge({ repo, head: 'factory/9-abc' })
+      .catch((e: unknown) => e);
+
+    expect((error as ForgeError).retryable).toBe(true);
+  });
+
+  it('reports a merged pull request with its merge commit', async () => {
+    const github = fakeGitHub({
+      [`GET ${PULLS}`]: () =>
+        json([pull({ state: 'closed', merged_at: '2026-11-20T12:00:00Z', merge_commit_sha: 'beef' })]),
+      [`GET ${CHECKS}`]: () => json({ check_runs: [run('ci', 'completed', 'success')] }),
+    });
+
+    expect(await forgeFor(github).pullRequestStatus(repo, 'factory/9-abc')).toMatchObject({
+      state: 'merged',
+      mergeSha: 'beef',
+      checks: 'success',
+    });
+  });
+
+  it('reports pending until every check finishes, and names the failing ones', async () => {
+    const pending = fakeGitHub({
+      [`GET ${PULLS}`]: () => json([pull()]),
+      [`GET ${CHECKS}`]: () =>
+        json({ check_runs: [run('lint', 'completed', 'success'), run('e2e', 'queued', null)] }),
+    });
+    const failing = fakeGitHub({
+      [`GET ${PULLS}`]: () => json([pull()]),
+      [`GET ${CHECKS}`]: () =>
+        json({ check_runs: [run('lint', 'completed', 'success'), run('e2e', 'completed', 'failure')] }),
+    });
+
+    expect(await forgeFor(pending).pullRequestStatus(repo, 'factory/9-abc')).toMatchObject({
+      checks: 'pending',
+    });
+    expect(await forgeFor(failing).pullRequestStatus(repo, 'factory/9-abc')).toMatchObject({
+      checks: 'failure',
+      failingChecks: ['e2e'],
+    });
+  });
+});

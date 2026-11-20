@@ -3,8 +3,10 @@ import {
   type ForgeIssue,
   type IssueComment,
   type IssueDraft,
+  type MergeRequest,
   type OpenFinding,
   type PullRequestDraft,
+  type PullRequestStatus,
   parseFingerprint,
 } from '@factory/domain';
 import type { GitHubAppAuth } from './app-auth.ts';
@@ -13,6 +15,29 @@ import { type Fetch, ForgeError, githubRequest } from './client.ts';
 /** Hidden in every comment the factory posts, so a retry can recognize its own earlier post. */
 export function dedupeMarker(key: string): string {
   return `<!-- software-factory:${key} -->`;
+}
+
+/** Check conclusions that mean the check failed. */
+const FAILED_CONCLUSIONS = new Set([
+  'failure',
+  'cancelled',
+  'timed_out',
+  'action_required',
+  'startup_failure',
+]);
+
+const ENABLE_AUTO_MERGE = `mutation ($id: ID!) {
+  enablePullRequestAutoMerge(input: { pullRequestId: $id, mergeMethod: SQUASH }) { clientMutationId }
+}`;
+
+interface PullRow {
+  number: number;
+  node_id: string;
+  html_url: string;
+  state: 'open' | 'closed';
+  merged_at: string | null;
+  merge_commit_sha: string | null;
+  head: { sha: string };
 }
 
 /** Comments scanned for a marker on retry. Retries happen within minutes, so recent pages suffice. */
@@ -170,6 +195,76 @@ export class GitHubForge implements ForgeAdapter {
     await githubRequest(await this.#request(repo), 'PUT', `/repos/${repo}/pulls/${pullNumber}/merge`, {
       merge_method: 'squash',
     });
+  }
+
+  async requestMerge(request: MergeRequest): Promise<{ number: number; url: string; merged: boolean }> {
+    const pr = await this.#pullFor(request.repo, request.head);
+    if (!pr) {
+      // The outbox opens the pull request first; a retry finds it.
+      throw new ForgeError(`no pull request for ${request.head} yet`, { retryable: true });
+    }
+    const found = { number: pr.number, url: pr.html_url };
+    if (pr.merged_at) return { ...found, merged: true };
+    if (pr.state === 'closed') {
+      throw new ForgeError(`${request.repo}#${pr.number} was closed without merging`, { retryable: false });
+    }
+
+    const response = await githubRequest<{ errors?: { message: string }[] }>(
+      await this.#request(request.repo),
+      'POST',
+      '/graphql',
+      { query: ENABLE_AUTO_MERGE, variables: { id: pr.node_id } },
+    );
+    const problem = response.errors?.map((e) => e.message).join('; ');
+    if (!problem) return { ...found, merged: false };
+
+    // GitHub refuses auto-merge when the pull request can already merge. Merge
+    // it now, but only once the checks have passed, whatever the branch rules say.
+    if (/clean status/i.test(problem)) {
+      const status = await this.pullRequestStatus(request.repo, request.head);
+      if (status?.checks !== 'success') {
+        throw new ForgeError(`${request.repo}#${pr.number}: waiting for checks before merging`, {
+          retryable: true,
+          retryAfterMs: 60_000,
+        });
+      }
+      await this.mergePullRequest(request.repo, pr.number);
+      return { ...found, merged: true };
+    }
+    throw new ForgeError(`could not enable auto-merge on ${request.repo}#${pr.number}: ${problem}`, {
+      retryable: false,
+    });
+  }
+
+  async pullRequestStatus(repo: string, head: string): Promise<PullRequestStatus | null> {
+    const pr = await this.#pullFor(repo, head);
+    if (!pr) return null;
+    const { check_runs: runs } = await githubRequest<{
+      check_runs: { name: string; status: string; conclusion: string | null }[];
+    }>(await this.#request(repo), 'GET', `/repos/${repo}/commits/${pr.head.sha}/check-runs?per_page=100`);
+    const failing = runs
+      .filter((r) => r.conclusion && FAILED_CONCLUSIONS.has(r.conclusion))
+      .map((r) => r.name);
+    const pending = runs.length === 0 || runs.some((r) => r.status !== 'completed');
+    return {
+      number: pr.number,
+      url: pr.html_url,
+      state: pr.merged_at ? 'merged' : pr.state,
+      mergeSha: pr.merged_at ? pr.merge_commit_sha : null,
+      checks: failing.length > 0 ? 'failure' : pending ? 'pending' : 'success',
+      failingChecks: failing,
+    };
+  }
+
+  /** The most recent pull request for a factory branch, open or not. */
+  async #pullFor(repo: string, head: string): Promise<PullRow | null> {
+    const owner = repo.split('/')[0];
+    const pulls = await githubRequest<PullRow[]>(
+      await this.#request(repo),
+      'GET',
+      `/repos/${repo}/pulls?state=all&head=${encodeURIComponent(`${owner}:${head}`)}`,
+    );
+    return pulls[0] ?? null;
   }
 
   async #request(repo: string) {

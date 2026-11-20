@@ -167,7 +167,7 @@ describe.skipIf(!TEST_DATABASE_URL)('implement-and-gate loop', () => {
     return { runs, queue, handlers, runId: created.runId, attempt };
   }
 
-  it('iterates on failed gates until they pass, then opens a traced pull request', async () => {
+  it('iterates on failed gates until they pass, then opens a traced pull request and asks GitHub to merge it', async () => {
     await using t = await createTestDatabase();
     const implementer = scripted([fixYear, addTracedTest]);
     const { runs, runId, attempt } = await setup(t, implementer);
@@ -182,14 +182,15 @@ describe.skipIf(!TEST_DATABASE_URL)('implement-and-gate loop', () => {
       criteria: [{ id: 'AC-1', text: 'The footer shows the current year' }],
     });
 
-    // Attempt 2 is told why, continues the same branch, and passes.
-    expect(await attempt()).toMatch(/moved to Reviewing/);
+    // Attempt 2 is told why, continues the same branch, and passes. Medium
+    // risk is within the merge policy, so the factory ships it itself.
+    expect(await attempt()).toMatch(/moved to Merging/);
     expect(implementer.inputs[1]?.feedback).toContain('### Gate failed: traceability');
     expect(implementer.inputs[1]?.feedback).toContain('AC-1: The footer shows the current year');
 
     const run = await t.db.selectFrom('run').selectAll().where('id', '=', runId).executeTakeFirstOrThrow();
     expect(run).toMatchObject({
-      state: 'Reviewing',
+      state: 'Merging',
       implement_attempts: 2,
       branch: `factory/7-${runId.slice(0, 8)}`,
     });
@@ -230,10 +231,17 @@ describe.skipIf(!TEST_DATABASE_URL)('implement-and-gate loop', () => {
       .execute();
     expect(trace).toEqual([{ criterion_id: 'AC-1', test_id: 'year.test.js:4', commit_sha: run.head_sha }]);
 
-    const outbox = await t.db.selectFrom('outbox').select(['kind', 'payload']).execute();
-    expect(outbox).toHaveLength(1);
-    expect(outbox[0]?.kind).toBe('pull_request.open');
+    const outbox = await t.db.selectFrom('outbox').select(['kind', 'payload']).orderBy('id').execute();
+    expect(outbox.map((m) => m.kind)).toEqual(['pull_request.open', 'pull_request.merge']);
     expect(outbox[0]?.payload).toMatchObject({ repo: REPO, head: run.branch, base: 'main' });
+    expect(outbox[1]?.payload).toEqual({ repo: REPO, head: run.branch });
+    // A worker watches for GitHub to merge it once the target's CI passes.
+    const merge = await t.db
+      .selectFrom('step')
+      .select(['kind', 'payload'])
+      .where('kind', '=', 'merge')
+      .execute();
+    expect(merge).toEqual([{ kind: 'merge', payload: { repo: REPO, head: run.branch } }]);
     const body = (outbox[0]?.payload as { body: string } | undefined)?.body ?? '';
     expect(body).toContain('Closes #7.');
     expect(body).toContain('| AC-1 | The footer shows the current year | `year.test.js:4` |');
@@ -241,6 +249,7 @@ describe.skipIf(!TEST_DATABASE_URL)('implement-and-gate loop', () => {
     // Not triaged in this test, so the risk is what the diff measured.
     expect(body).toContain('**medium**. Predicted by triage: not triaged; measured from the diff: medium.');
     expect(body).toContain('- `year.js matches year.js (medium)`');
+    expect(body).toContain('The factory merges this automatically once the repository');
 
     // Both implement attempts were metered against the run.
     const spend = await t.db.selectFrom('cost_ledger').select('usd').where('run_id', '=', runId).execute();
@@ -250,6 +259,7 @@ describe.skipIf(!TEST_DATABASE_URL)('implement-and-gate loop', () => {
     const types = (await audit.readAll()).map((e) => e.type);
     expect(types.filter((x) => x === 'gating.completed')).toHaveLength(2);
     expect(types).toContain('traceability.recorded');
+    expect(types).toContain('delivery.decided');
     expect(await audit.verifyInDatabase()).toEqual([]);
   });
 
@@ -289,6 +299,11 @@ describe.skipIf(!TEST_DATABASE_URL)('implement-and-gate loop', () => {
     expect((pr.payload as { body: string }).body).toContain(
       '**high**. Predicted by triage: low; measured from the diff: high.',
     );
+    // High risk is held for the owner: no merge request, no merge step.
+    expect((pr.payload as { body: string }).body).toContain("Held for the owner's approval");
+    const decided = events.find((e) => e.type === 'delivery.decided');
+    expect(JSON.parse(decided?.payload ?? '{}')).toMatchObject({ decision: 'hold', risk: 'high' });
+    expect(await t.db.selectFrom('step').select('id').where('kind', '=', 'merge').execute()).toEqual([]);
   });
 
   it('escalates with a comment once the attempts are spent', async () => {
@@ -336,7 +351,7 @@ describe.skipIf(!TEST_DATABASE_URL)('implement-and-gate loop', () => {
     await startNextImplementation(runs);
 
     expect(await attempt()).toMatch(/moved to Implementing/);
-    expect(await attempt()).toMatch(/moved to Reviewing/);
+    expect(await attempt()).toMatch(/moved to Merging/);
   });
 
   it('does not let a test an earlier issue left on main stand for this issue', async () => {
@@ -366,7 +381,7 @@ describe.skipIf(!TEST_DATABASE_URL)('implement-and-gate loop', () => {
     expect(failed).toEqual([{ gate: 'traceability' }]);
 
     // Once it writes one, only that test is linked, not the earlier issue's.
-    expect(await attempt()).toMatch(/moved to Reviewing/);
+    expect(await attempt()).toMatch(/moved to Merging/);
     const trace = await t.db.selectFrom('trace_link').select('test_id').execute();
     expect(trace).toEqual([{ test_id: 'year.test.js:4' }]);
   });
@@ -381,7 +396,7 @@ describe.skipIf(!TEST_DATABASE_URL)('implement-and-gate loop', () => {
     );
   });
 
-  it('drives a run to an opened pull request in one process, and reports it from the audit log', async () => {
+  it('drives a run to a pull request queued to merge in one process, and reports it from the audit log', async () => {
     await using t = await createTestDatabase();
     const { runs, queue, handlers, runId } = await setup(t, scripted([fixYear, addTracedTest]));
     const opened: { head: string }[] = [];
@@ -393,6 +408,8 @@ describe.skipIf(!TEST_DATABASE_URL)('implement-and-gate loop', () => {
         return { number: 12, url: 'https://github.com/codyalves/target/pull/12', reused: false };
       },
       mergePullRequest: async () => {},
+      requestMerge: async () => ({ number: 1, url: '', merged: false }),
+      pullRequestStatus: async () => null,
       createIssue: async () => ({ number: 1, url: 'issue-1', reused: false }),
       openFindings: async () => [],
     };
@@ -423,7 +440,7 @@ describe.skipIf(!TEST_DATABASE_URL)('implement-and-gate loop', () => {
       async finished() {
         const run = await runs.get(runId);
         const unsent = await t.db.selectFrom('outbox').select('id').where('sent_at', 'is', null).execute();
-        return run?.state === 'Reviewing' && unsent.length === 0;
+        return run?.state === 'Merging' && unsent.length === 0;
       },
       maxRounds: 20,
       log: (line) => lines.push(line),
@@ -431,7 +448,8 @@ describe.skipIf(!TEST_DATABASE_URL)('implement-and-gate loop', () => {
 
     expect(outcome.finished).toBe(true);
     expect(opened).toHaveLength(1);
-    expect(lines.at(-1)).toMatch(/pull_request.open\) sent$/);
+    expect(lines.some((l) => /pull_request.open\) sent$/.test(l))).toBe(true);
+    expect(lines.at(-1)).toMatch(/pull_request.merge\) sent$/);
 
     const audit = new AuditStore(t.db);
     const report = renderRunReport(await audit.readAll(), {
@@ -440,7 +458,7 @@ describe.skipIf(!TEST_DATABASE_URL)('implement-and-gate loop', () => {
       pullRequestUrl: 'https://github.com/codyalves/target/pull/12',
       chainValid: (await audit.verifyInDatabase()).length === 0,
     });
-    expect(report).toContain('**Final state: Reviewing**: all 5 gates passed');
+    expect(report).toContain('**Final state: Merging**: all 5 gates passed; medium risk: merges once');
     expect(report).toContain('- Implement attempts: 2');
     expect(report).toContain('- **FAIL** traceability: 1 of 1 criteria have no test');
     expect(report).toContain('| AC-1 | `year.test.js:4` |');
@@ -500,7 +518,7 @@ describe.skipIf(!TEST_DATABASE_URL)('implement-and-gate loop', () => {
 
       expect(await startNextImplementation(runs, { trustedAuthors: [BOT] })).toMatch(/moved to Implementing/);
       // The implementer works on a branch that already holds the failing test.
-      expect(await attempt()).toMatch(/moved to Reviewing/);
+      expect(await attempt()).toMatch(/moved to Merging/);
 
       const branch = `factory/7-${runId.slice(0, 8)}`;
       expect(git(bare, 'log', '--format=%s', branch).split('\n').slice(0, 2)).toEqual([

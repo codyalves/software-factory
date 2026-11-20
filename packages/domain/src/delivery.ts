@@ -334,3 +334,62 @@ export function measureRisk(changedPaths: readonly string[], riskPaths: RiskPath
 export function higherTier(a: RiskTier, b: RiskTier): RiskTier {
   return RISK_TIERS.indexOf(a) >= RISK_TIERS.indexOf(b) ? a : b;
 }
+
+/* ---------------------------------------------------------------- delivery */
+
+/**
+ * Risk levels the factory may merge and ship without a person, once every
+ * gate has passed. High risk (auth, data, payments, platform, migrations)
+ * waits for the owner's approval. Pinned to gates/gates.yaml.
+ */
+export const AUTO_MERGE_RISK_LEVELS: readonly RiskTier[] = ['low', 'medium'];
+
+export type DeliveryDecision =
+  | { readonly next: 'Merging'; readonly reason: string }
+  | { readonly next: 'Reviewing'; readonly reason: string };
+
+/** What happens to work that passed every gate: the factory merges it, or a person reviews it. */
+export function deliveryDecision(
+  risk: RiskTier,
+  autoMergeLevels: readonly RiskTier[] = AUTO_MERGE_RISK_LEVELS,
+): DeliveryDecision {
+  return autoMergeLevels.includes(risk)
+    ? { next: 'Merging', reason: `${risk} risk: merges once the target's CI passes` }
+    : { next: 'Reviewing', reason: `${risk} risk: held for the owner's approval` };
+}
+
+/** A pull request as the merge step sees it. */
+export interface PullRequestStatus {
+  readonly number: number;
+  readonly url: string;
+  readonly state: 'open' | 'closed' | 'merged';
+  readonly mergeSha: string | null;
+  /** The target's CI on the head commit: pending until every check has finished. */
+  readonly checks: 'pending' | 'success' | 'failure';
+  readonly failingChecks: readonly string[];
+}
+
+export type MergeProgress =
+  | { readonly done: false }
+  | { readonly done: true; readonly merged: true; readonly mergeSha: string }
+  | { readonly done: true; readonly merged: false; readonly reason: string };
+
+/**
+ * Where a merge stands. GitHub merges the pull request itself once the
+ * target's required checks pass; the factory only watches. A failing check,
+ * or a pull request closed without merging, ends the wait.
+ */
+export function mergeProgress(status: PullRequestStatus | null): MergeProgress {
+  if (!status) return { done: false };
+  if (status.state === 'merged') {
+    return status.mergeSha ? { done: true, merged: true, mergeSha: status.mergeSha } : { done: false };
+  }
+  if (status.state === 'closed') {
+    return { done: true, merged: false, reason: 'the pull request was closed without merging' };
+  }
+  if (status.checks === 'failure') {
+    const names = status.failingChecks.length > 0 ? status.failingChecks.join(', ') : 'unknown';
+    return { done: true, merged: false, reason: `the target's CI failed: ${names}` };
+  }
+  return { done: false };
+}

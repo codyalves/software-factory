@@ -3,7 +3,12 @@ import { createDb, FactoryControl, OutboxRelay, RunStore, StepQueue } from '@fac
 import { DEFAULT_CONFIDENCE_THRESHOLD } from '@factory/domain';
 import { GitHubAppAuth, GitHubForge, parsePrivateKey } from '@factory/github';
 import { z } from 'zod';
-import { applyNextGateResult, applyNextImplementation, startNextImplementation } from './delivery.ts';
+import {
+  applyNextGateResult,
+  applyNextImplementation,
+  applyNextMergeResult,
+  startNextImplementation,
+} from './delivery.ts';
 import { runDrainLoop } from './drain-loop.ts';
 import { deliverNextOutbox } from './outbox.ts';
 import { runPeriodically } from './periodic.ts';
@@ -58,6 +63,7 @@ await Promise.all([
   runDrainLoop({ name: 'planning', next: () => startNextImplementation(runs, { trustedAuthors }), ...loop }),
   runDrainLoop({ name: 'implementation results', next: () => applyNextImplementation(runs), ...loop }),
   runDrainLoop({ name: 'gate results', next: () => applyNextGateResult(runs), ...loop }),
+  runDrainLoop({ name: 'merge results', next: () => applyNextMergeResult(runs), ...loop }),
   forge
     ? runDrainLoop({
         name: 'outbox relay',

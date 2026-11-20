@@ -9,6 +9,7 @@ import {
   CLEAR_ANSWERS,
   createTargetRepo,
   fixYear,
+  recordingForge,
   runScenario,
   scripted,
 } from './testing/scenario.ts';
@@ -64,7 +65,7 @@ describe.skipIf(!TEST_DATABASE_URL)('ReportStore over real runs', () => {
     expect(runs[1]).toMatchObject({
       repo: REPO,
       issueNumber: 1,
-      state: 'Reviewing',
+      state: 'Merged',
       riskLevel: 'medium',
       implementAttempts: 2,
       budgetUsd: 5,
@@ -88,7 +89,8 @@ describe.skipIf(!TEST_DATABASE_URL)('ReportStore over real runs', () => {
       'Implementing>Gating',
       'Gating>Implementing',
       'Implementing>Gating',
-      'Gating>Reviewing',
+      'Gating>Merging',
+      'Merging>Merged',
     ]);
     expect(report?.decisions).toHaveLength(7);
     expect(report?.decisions[0]).toMatchObject({
@@ -137,8 +139,13 @@ describe.skipIf(!TEST_DATABASE_URL)('ReportStore over real runs', () => {
     ]);
     expect(report?.messages).toEqual([
       { kind: 'pull_request.open', status: 'sent', url: report?.pullRequestUrl, error: null },
+      { kind: 'pull_request.merge', status: 'sent', url: report?.pullRequestUrl, error: null },
     ]);
-    expect(report?.events.at(-1)?.type).toBe('outbox.sent');
+    // The run ends when GitHub has merged it; the merge commit is on record.
+    expect(report?.timeline.at(-1)?.reason).toMatch(/^merged as [0-9a-f]{12}$/);
+    expect(report?.events.map((e) => e.type)).toEqual(
+      expect.arrayContaining(['delivery.decided', 'delivery.merged']),
+    );
   });
 
   it('shows why an escalated run stopped', async () => {
@@ -162,6 +169,27 @@ describe.skipIf(!TEST_DATABASE_URL)('ReportStore over real runs', () => {
     ]);
   });
 
+  it("escalates with a comment when the target's CI fails after the gates passed", async () => {
+    await using t = await createTestDatabase();
+    const forge = recordingForge({ ci: 'failure' });
+    const runId = await runScenario({
+      db: t.db,
+      remote,
+      issue: issue(4, 'Footer shows last year'),
+      answers: CLEAR_ANSWERS,
+      implementer: scripted([fixYear, addTracedTest]),
+      forge,
+    });
+
+    const report = await new ReportStore(t.db).runReport(runId);
+
+    expect(report?.state).toBe('Escalated');
+    expect(report?.timeline.at(-1)?.reason).toBe("could not merge: the target's CI failed: e2e");
+    expect(forge.sent.at(-1)?.body).toContain(
+      'passed every quality gate for this issue but could not ship it',
+    );
+  });
+
   it('returns nothing for an unknown or malformed run id', async () => {
     await using t = await createTestDatabase();
     const reports = new ReportStore(t.db);
@@ -181,7 +209,7 @@ describe.skipIf(!TEST_DATABASE_URL)('ReportStore over real runs', () => {
       repo: REPO,
       issueNumber: 1,
       latestRunId: runId,
-      latestState: 'Reviewing',
+      latestState: 'Merged',
       pullRequestUrl: expect.stringContaining('/pull/'),
     });
     expect(matrix[0]?.criteria.map((c) => [c.criterionId, c.tests.length])).toEqual([

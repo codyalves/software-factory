@@ -17,12 +17,14 @@ import type { Kysely } from 'kysely';
 import {
   applyNextGateResult,
   applyNextImplementation,
+  applyNextMergeResult,
   startNextImplementation,
 } from '../../../orchestrator/src/delivery.ts';
 import { deliverNextOutbox } from '../../../orchestrator/src/outbox.ts';
 import { applyNextTriageResult, startNextTriage } from '../../../orchestrator/src/triage.ts';
 import { driveRun } from '../drive.ts';
 import type { TargetConfig } from '../gates.ts';
+import { createMergeHandler, MERGE_STEP } from '../handlers/merge.ts';
 import { createHandlers } from '../handlers.ts';
 import type { Implementer, ImplementInput } from '../implementer.ts';
 import { executeStep } from '../step-runner.ts';
@@ -152,9 +154,16 @@ export function scriptedDecisions(answers: Answers): DecisionModel {
   };
 }
 
-/** Records what the factory would have sent to GitHub. */
-export function recordingForge(): ForgeAdapter & { sent: { kind: string; body: string }[] } {
+/**
+ * Records what the factory would have sent to GitHub. Pull requests the
+ * factory asks to merge are merged at once, as if the target's CI had passed,
+ * unless `ci` says the checks fail.
+ */
+export function recordingForge(
+  options: { ci?: 'success' | 'failure' } = {},
+): ForgeAdapter & { sent: { kind: string; body: string }[] } {
   const sent: { kind: string; body: string }[] = [];
+  const pulls = new Map<string, { number: number; url: string; mergeRequested: boolean }>();
   let next = 2;
   return {
     name: 'recording',
@@ -168,9 +177,36 @@ export function recordingForge(): ForgeAdapter & { sent: { kind: string; body: s
     },
     async openPullRequest(pr) {
       sent.push({ kind: 'pull_request', body: pr.body });
-      return { number: next, url: `https://github.com/${pr.repo}/pull/${next++}`, reused: false };
+      const pull = {
+        number: next,
+        url: `https://github.com/${pr.repo}/pull/${next++}`,
+        mergeRequested: false,
+      };
+      pulls.set(`${pr.repo}:${pr.head}`, pull);
+      return { number: pull.number, url: pull.url, reused: false };
     },
     async mergePullRequest() {},
+    async requestMerge({ repo, head }) {
+      const pull = pulls.get(`${repo}:${head}`);
+      if (!pull) throw new Error(`no pull request for ${head}`);
+      sent.push({ kind: 'merge', body: `${repo}#${pull.number}` });
+      pull.mergeRequested = true;
+      return { number: pull.number, url: pull.url, merged: false };
+    },
+    async pullRequestStatus(repo, head) {
+      const pull = pulls.get(`${repo}:${head}`);
+      if (!pull) return null;
+      const failed = options.ci === 'failure';
+      const merged = pull.mergeRequested && !failed;
+      return {
+        number: pull.number,
+        url: pull.url,
+        state: merged ? 'merged' : 'open',
+        mergeSha: merged ? `${'0'.repeat(36)}${String(pull.number).padStart(4, '0')}` : null,
+        checks: failed ? 'failure' : 'success',
+        failingChecks: failed ? ['e2e'] : [],
+      };
+    },
     async createIssue(issue) {
       sent.push({ kind: 'issue', body: issue.body });
       return { number: next, url: `https://github.com/${issue.repo}/issues/${next++}`, reused: false };
@@ -206,15 +242,19 @@ export async function runScenario(input: {
   if (created.outcome !== 'created') throw new Error(`could not start a run: ${created.outcome}`);
   const runId = created.runId;
 
-  const handlers = createHandlers({
-    runs,
-    decisionModel: scriptedDecisions(input.answers),
-    delivery: {
-      targets: { [issue.repo]: SCENARIO_TARGET },
-      access: localRepoAccess({ [issue.repo]: input.remote }),
-      implementer: input.implementer,
-    },
-  });
+  const handlers = {
+    ...createHandlers({
+      runs,
+      decisionModel: scriptedDecisions(input.answers),
+      delivery: {
+        targets: { [issue.repo]: SCENARIO_TARGET },
+        access: localRepoAccess({ [issue.repo]: input.remote }),
+        implementer: input.implementer,
+      },
+    }),
+    // Watches the recording forge's pull requests, without the real minutes-long waits.
+    [MERGE_STEP]: createMergeHandler({ forge, pollMs: 5, waitMs: 5_000 }),
+  };
   const options = {
     queue,
     worker: 'scenario-worker',
@@ -232,6 +272,7 @@ export async function runScenario(input: {
       () => startNextImplementation(runs),
       () => applyNextImplementation(runs),
       () => applyNextGateResult(runs),
+      () => applyNextMergeResult(runs),
       () => deliverNextOutbox(relay, forge),
     ],
     async work() {

@@ -31,7 +31,7 @@ export const STATE_LABEL: Readonly<Record<string, string>> = {
   Planning: 'Planning',
   Implementing: 'Implementing',
   Gating: 'Checking',
-  Reviewing: 'Awaiting review',
+  Reviewing: 'Held for review',
   Merging: 'Merging',
   Merged: 'Merged',
   Escalated: 'Needs a person',

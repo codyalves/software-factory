@@ -9,6 +9,7 @@ describe('run state machine', () => {
     ['Planning', 'Implementing'],
     ['Implementing', 'Gating'],
     ['Gating', 'Reviewing'],
+    ['Gating', 'Merging'],
     ['Reviewing', 'Merging'],
     ['Merging', 'Merged'],
   ])('allows %s -> %s', (from, to) => {
@@ -18,7 +19,7 @@ describe('run state machine', () => {
   it.each<[RunState, RunState]>([
     ['Intake', 'Implementing'],
     ['Planning', 'Merging'],
-    ['Gating', 'Merging'],
+    ['Implementing', 'Merging'],
     ['Implementing', 'Reviewing'],
   ])('denies skipping a stage: %s -> %s', (from, to) => {
     expect(evaluateTransition(from, to, 0).allowed).toBe(false);

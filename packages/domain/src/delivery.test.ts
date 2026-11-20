@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import {
+  AUTO_MERGE_RISK_LEVELS,
   changesGate,
+  deliveryDecision,
   extractCriteria,
   type GateResult,
   gatingOutcome,
@@ -8,6 +10,8 @@ import {
   higherTier,
   isTestFile,
   measureRisk,
+  mergeProgress,
+  type PullRequestStatus,
   protectedPathsGate,
   SCOPE_LINE,
   secretScan,
@@ -241,5 +245,56 @@ describe('scope on returns', () => {
     const outcome = gatingOutcome([fail('unit_tests')], 1);
 
     expect(outcome.next === 'Implementing' && outcome.feedback).toContain(SCOPE_LINE);
+  });
+});
+
+describe('deliveryDecision', () => {
+  it('merges low and medium risk work and holds high risk for the owner', () => {
+    expect(deliveryDecision('low').next).toBe('Merging');
+    expect(deliveryDecision('medium').next).toBe('Merging');
+    expect(deliveryDecision('high')).toEqual({
+      next: 'Reviewing',
+      reason: "high risk: held for the owner's approval",
+    });
+  });
+
+  it('holds everything when the policy allows no auto-merge', () => {
+    expect(deliveryDecision('low', []).next).toBe('Reviewing');
+    expect(AUTO_MERGE_RISK_LEVELS).not.toContain('high');
+  });
+});
+
+describe('mergeProgress', () => {
+  const status = (over: Partial<PullRequestStatus>): PullRequestStatus => ({
+    number: 7,
+    url: 'https://github.com/o/r/pull/7',
+    state: 'open',
+    mergeSha: null,
+    checks: 'pending',
+    failingChecks: [],
+    ...over,
+  });
+
+  it('keeps waiting while the pull request is missing, or open with checks pending or passed', () => {
+    expect(mergeProgress(null)).toEqual({ done: false });
+    expect(mergeProgress(status({}))).toEqual({ done: false });
+    expect(mergeProgress(status({ checks: 'success' }))).toEqual({ done: false });
+  });
+
+  it('finishes when GitHub has merged it', () => {
+    expect(mergeProgress(status({ state: 'merged', mergeSha: 'abc123' }))).toEqual({
+      done: true,
+      merged: true,
+      mergeSha: 'abc123',
+    });
+  });
+
+  it('stops on a failing check or a pull request closed without merging', () => {
+    expect(mergeProgress(status({ checks: 'failure', failingChecks: ['e2e'] }))).toEqual({
+      done: true,
+      merged: false,
+      reason: "the target's CI failed: e2e",
+    });
+    expect(mergeProgress(status({ state: 'closed' }))).toMatchObject({ done: true, merged: false });
   });
 });

@@ -1,7 +1,12 @@
 import { readFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import { createTestDatabase, TEST_DATABASE_URL } from '@factory/db/testing';
-import { BUILT_IN_GATES, DEFAULT_CONFIDENCE_THRESHOLD, MAX_IMPLEMENT_ATTEMPTS } from '@factory/domain';
+import {
+  AUTO_MERGE_RISK_LEVELS,
+  BUILT_IN_GATES,
+  DEFAULT_CONFIDENCE_THRESHOLD,
+  MAX_IMPLEMENT_ATTEMPTS,
+} from '@factory/domain';
 import { sql } from 'kysely';
 import { describe, expect, it } from 'vitest';
 import { parse } from 'yaml';
@@ -53,8 +58,9 @@ describe('gates/gates.yaml', () => {
     expect((await policy()).gates).toEqual([...BUILT_IN_GATES]);
   });
 
-  it('promises no auto-merge, because the factory never merges', async () => {
-    expect((await policy()).merge_policy.auto_merge_risk_levels).toEqual([]);
+  it('lists exactly the risk levels the factory merges without a person', async () => {
+    expect((await policy()).merge_policy.auto_merge_risk_levels).toEqual([...AUTO_MERGE_RISK_LEVELS]);
+    expect(AUTO_MERGE_RISK_LEVELS).not.toContain('high');
   });
 });
 
