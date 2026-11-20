@@ -399,6 +399,8 @@ describe('GitHubForge after a merge', () => {
   const repo = 'codyalves/target';
   const forgeFor = (github: ReturnType<typeof fakeGitHub>) => new GitHubForge({ auth, fetch: github.fetch });
   const DEPLOYMENTS = `/repos/${repo}/deployments?sha=beef&environment=Production&per_page=5`;
+  const STATUSES = `/repos/${repo}/commits/beef/statuses?per_page=100`;
+  const vercel = { environment: 'Production', statusContext: 'Vercel' };
 
   it('reports a production deployment as pending, then live with its URL', async () => {
     let state = 'in_progress';
@@ -408,18 +410,40 @@ describe('GitHubForge after a merge', () => {
         json([{ state, environment_url: 'https://target.example' }]),
     });
 
-    expect(await forgeFor(github).deploymentState(repo, 'beef', 'Production')).toEqual({
+    expect(await forgeFor(github).deploymentState(repo, 'beef', vercel)).toEqual({
       state: 'pending',
       url: 'https://target.example',
     });
     state = 'success';
-    expect((await forgeFor(github).deploymentState(repo, 'beef', 'Production')).state).toBe('success');
+    expect((await forgeFor(github).deploymentState(repo, 'beef', vercel)).state).toBe('success');
+  });
+
+  it('reads the commit status a host posts instead of a deployment, as Vercel does', async () => {
+    let state = 'pending';
+    const github = fakeGitHub({
+      [`GET ${DEPLOYMENTS}`]: () => json([]),
+      [`GET ${STATUSES}`]: () =>
+        json([
+          { context: 'ci', state: 'success' },
+          { context: 'Vercel', state, target_url: 'https://vercel.com/x/y' },
+        ]),
+    });
+
+    expect((await forgeFor(github).deploymentState(repo, 'beef', vercel)).state).toBe('pending');
+    state = 'success';
+    expect(await forgeFor(github).deploymentState(repo, 'beef', vercel)).toEqual({
+      state: 'success',
+      url: 'https://vercel.com/x/y',
+    });
   });
 
   it('reports no deployment until the host has started one', async () => {
-    const github = fakeGitHub({ [`GET ${DEPLOYMENTS}`]: () => json([]) });
+    const github = fakeGitHub({
+      [`GET ${DEPLOYMENTS}`]: () => json([]),
+      [`GET ${STATUSES}`]: () => json([{ context: 'ci', state: 'success' }]),
+    });
 
-    expect(await forgeFor(github).deploymentState(repo, 'beef', 'Production')).toEqual({
+    expect(await forgeFor(github).deploymentState(repo, 'beef', vercel)).toEqual({
       state: 'none',
       url: null,
     });

@@ -38,6 +38,10 @@
       "medium": ["content/company.json", "lib/company.ts", "app/layout.tsx", "app/api/**"]
     },
     "commandTimeoutMs": 600000,
-    "production": { "url": "https://factory-target-app.vercel.app", "environment": "Production" }
+    "production": {
+      "url": "https://factory-target-app.vercel.app",
+      "environment": "Production",
+      "statusContext": "Vercel"
+    }
   }
 }

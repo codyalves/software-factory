@@ -36,8 +36,10 @@ const targetSchema = z.object({
   production: z
     .object({
       url: z.url(),
-      /** The deployment environment the host reports to GitHub (Vercel: "Production"). */
+      /** The deployment environment the host reports to GitHub, if it reports deployments. */
       environment: z.string().min(1).default('Production'),
+      /** The commit status the host posts otherwise (Vercel: "Vercel"). */
+      statusContext: z.string().min(1).default('Vercel'),
     })
     .optional(),
 });
