@@ -1,11 +1,16 @@
 import Link from 'next/link';
+import { controlConfig, currentLogin } from '@/lib/control';
 import { factoryStatus, reports } from '@/lib/data';
 import { usd } from '@/lib/format';
 import { Nav } from './nav';
 
 /** The left rail: where you are, and the factory's state right now. */
 export async function Rail() {
-  const [status, audit] = await Promise.all([factoryStatus(), reports().auditSummary(1)]);
+  const [status, audit, login] = await Promise.all([
+    factoryStatus(),
+    reports().auditSummary(1),
+    currentLogin(),
+  ]);
   const intact = audit.problems.length === 0;
   return (
     <aside className="rail">
@@ -34,6 +39,20 @@ export async function Rail() {
           </dd>
         </div>
       </dl>
+      {controlConfig() ? (
+        <div className="rail-user">
+          {login ? (
+            <form action="/auth/logout" method="post">
+              Signed in as {login}{' '}
+              <button type="submit" className="link-button">
+                Sign out
+              </button>
+            </form>
+          ) : (
+            <a href="/auth/login">Sign in with GitHub</a>
+          )}
+        </div>
+      ) : null}
     </aside>
   );
 }

@@ -31,6 +31,10 @@ on:
         description: Claude Code cap per implement attempt, USD
         default: '1.25'
         required: true
+      requested_by:
+        description: Who asked, when started from the dashboard (recorded as the actor)
+        default: ''
+        required: false
 
 permissions:
   contents: read
@@ -113,10 +117,12 @@ jobs:
           LABEL: ${{ inputs.label }}
           MAX_RUNS: ${{ inputs.max_runs }}
           DAILY_BUDGET: ${{ inputs.daily_budget }}
+          # The dashboard starts sessions as the factory's App; it names the owner who asked.
+          ACTOR: ${{ inputs.requested_by || github.actor }}
         run: |
           set -o pipefail
           node apps/workers/src/run-backlog.ts --repo "$REPO" --label "$LABEL" \
-            --max-runs "$MAX_RUNS" --daily-budget "$DAILY_BUDGET" --actor "$GITHUB_ACTOR" \
+            --max-runs "$MAX_RUNS" --daily-budget "$DAILY_BUDGET" --actor "$ACTOR" \
             --out backlog --summary backlog/summary.md --target-dir target
           cat backlog/summary.md >> "$GITHUB_STEP_SUMMARY"
           echo "" >> "$GITHUB_STEP_SUMMARY"
