@@ -202,9 +202,15 @@ importers:
 
   apps/dashboard:
     dependencies:
+      '@anthropic-ai/sdk':
+        specifier: ^1.10.0
+        version: 1.10.0(zod@4.6.7)
       '@factory/db':
         specifier: workspace:*
         version: link:../../packages/db
+      '@factory/decisions':
+        specifier: workspace:*
+        version: link:../../packages/decisions
       '@factory/domain':
         specifier: workspace:*
         version: link:../../packages/domain

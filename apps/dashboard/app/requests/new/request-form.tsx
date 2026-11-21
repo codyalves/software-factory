@@ -46,9 +46,24 @@ export function RequestForm() {
         <input name="dependsOn" inputMode="numeric" defaultValue={v.dependsOn} placeholder="21, 22" />
       </label>
       {state.error ? (
-        <p className="form-error" role="alert">
-          {state.error}
-        </p>
+        <div className="form-error" role="alert">
+          <p>{state.error}</p>
+          {state.vague && state.vague.length > 0 ? (
+            <ul>
+              {state.vague.map((v) => (
+                <li key={v.criterion}>
+                  <strong>{v.criterion}</strong>: {v.why}
+                </li>
+              ))}
+            </ul>
+          ) : null}
+        </div>
+      ) : null}
+      {state.canOverride ? (
+        <label className="field-check">
+          <input type="checkbox" name="override" />
+          File anyway (triage will still check it, and may stop it)
+        </label>
       ) : null}
       <div className="actions">
         <button type="submit" className="button" disabled={pending}>

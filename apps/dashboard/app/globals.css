@@ -417,6 +417,26 @@ section > h2 {
   color: var(--fail);
 }
 
+.form-error p {
+  margin: 0;
+}
+
+.form-error ul {
+  margin: 0.5rem 0 0;
+  padding-left: 1.1rem;
+  color: var(--ink);
+}
+
+.form-error li + li {
+  margin-top: 0.35rem;
+}
+
+.field-check {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+}
+
 .plain-list {
   padding-left: 1.1rem;
 }
