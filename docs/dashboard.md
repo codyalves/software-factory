@@ -59,6 +59,12 @@ How it stays safe:
   the owner's login as its actor; stopping cancels that workflow run. The
   dashboard's database login stays read-only, and the orchestrator stays the
   only writer of run state.
+- **Requests are checked before they are filed.** A free check flags
+  criteria a test cannot pin down ("improved", "exists", "fast" without a
+  number) and says what to write instead. With `ANTHROPIC_API_KEY` set, the
+  form also asks triage's own spec question, with triage's prompt and model
+  (a fraction of a cent). The owner can tick "File anyway"; triage still
+  decides.
 - **Requests cannot forge the factory's markers.** HTML comments are refused,
   and the description must be prose, so the acceptance criteria are exactly
   the ones listed.
@@ -87,6 +93,7 @@ How it stays safe:
    | `SESSION_SECRET` | 32 or more random characters, used only to sign sessions |
    | `DASHBOARD_OWNERS` | GitHub logins that may act, comma-separated |
    | `FACTORY_REPO`, `TARGET_REPO` | Optional; default to the factory and its target |
+   | `ANTHROPIC_API_KEY` | Optional; turns on triage's spec check in the request form. A key with a low spend limit is plenty. |
 
 ## Design
 

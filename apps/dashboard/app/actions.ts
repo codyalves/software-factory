@@ -10,7 +10,9 @@ import {
   startBacklogSession,
   stopSession,
 } from '@/lib/control';
+import { vagueCriteria } from '@/lib/request-check';
 import { requestDraft } from '@/lib/requests';
+import { specCheck } from '@/lib/spec-check';
 
 /**
  * Every action re-checks, on the server, that an owner is signed in: hiding
@@ -26,6 +28,10 @@ async function owner() {
 
 export interface RequestFormState {
   readonly error: string | null;
+  /** Criteria the free check found too vague to test, and why. */
+  readonly vague?: readonly { readonly criterion: string; readonly why: string }[];
+  /** True when the owner may tick "File anyway" to overrule the checks. */
+  readonly canOverride?: boolean;
   /** What was typed, so a refused request comes back filled in. */
   readonly values: Readonly<Record<'title' | 'description' | 'criteria' | 'dependsOn', string>>;
 }
@@ -43,6 +49,32 @@ export async function fileRequestAction(
   };
   const draft = requestDraft({ ...values, requestedBy: login });
   if (!draft.ok) return { error: draft.error, values };
+
+  // Catch what triage would stop on before filing, not after a session.
+  // The owner can overrule it; triage still has the last word.
+  if (form.get('override') !== 'on') {
+    const criteria = values.criteria
+      .split(/\r?\n/)
+      .map((l) => l.replace(/^\s*(?:[-*+]|\d+[.)])\s+/, '').trim())
+      .filter(Boolean);
+    const vague = vagueCriteria(criteria);
+    if (vague.length > 0) {
+      return {
+        error: 'Some criteria cannot be checked by a test yet. Triage would stop on these:',
+        vague,
+        canOverride: true,
+        values,
+      };
+    }
+    const spec = await specCheck(config.targetRepo, draft.title, draft.body).catch(() => null);
+    if (spec && !spec.ready) {
+      return {
+        error: `Triage's spec check says this is not ready to build (${Math.round(spec.probability * 100)}% confident). Make each criterion something a test can check: what is shown or what happens, where, and when.`,
+        canOverride: true,
+        values,
+      };
+    }
+  }
   const issue = await fileIssue(config, draft);
   revalidatePath('/backlog');
   redirect(`/backlog?filed=${issue.number}`);
