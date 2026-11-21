@@ -24,19 +24,25 @@ async function owner() {
   return { config, login };
 }
 
+export interface RequestFormState {
+  readonly error: string | null;
+  /** What was typed, so a refused request comes back filled in. */
+  readonly values: Readonly<Record<'title' | 'description' | 'criteria' | 'dependsOn', string>>;
+}
+
 export async function fileRequestAction(
-  _previous: { error: string | null },
+  _previous: RequestFormState,
   form: FormData,
-): Promise<{ error: string | null }> {
+): Promise<RequestFormState> {
   const { config, login } = await owner();
-  const draft = requestDraft({
+  const values = {
     title: String(form.get('title') ?? ''),
     description: String(form.get('description') ?? ''),
     criteria: String(form.get('criteria') ?? ''),
     dependsOn: String(form.get('dependsOn') ?? ''),
-    requestedBy: login,
-  });
-  if (!draft.ok) return { error: draft.error };
+  };
+  const draft = requestDraft({ ...values, requestedBy: login });
+  if (!draft.ok) return { error: draft.error, values };
   const issue = await fileIssue(config, draft);
   revalidatePath('/backlog');
   redirect(`/backlog?filed=${issue.number}`);
