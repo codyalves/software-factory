@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { AuditStore } from './audit-store.ts';
 import { migrate } from './migrator.ts';
 import { RunStore } from './run-store.ts';
+import { enqueueStep, StepQueue } from './step-queue.ts';
 import { createTestDatabase, MIGRATIONS_DIR, TEST_DATABASE_URL } from './testing.ts';
 
 const issue: ForgeIssue = {
@@ -85,6 +86,29 @@ describe.skipIf(!TEST_DATABASE_URL)('Postgres integration', () => {
     const last = (await new AuditStore(t.db).readAll()).at(-1);
     expect(last?.type).toBe('run.state_changed');
     expect(JSON.parse(last?.payload ?? '{}')).toMatchObject({ from: 'Intake', to: 'Triage' });
+  });
+
+  it('cancels an active run and stops its steps, so no worker picks them up', async () => {
+    await using t = await createTestDatabase();
+    const runs = new RunStore(t.db);
+    const created = await runs.createFromIssue(issue, 'github', 'delivery-cancel');
+    if (created.outcome !== 'created') throw new Error('expected a run');
+    await runs.advanceNext('Intake', 'Triage', 'test');
+    await enqueueStep(t.db, { runId: created.runId, kind: 'triage', idempotencyKey: 'k1', payload: {} });
+
+    const cancelled = await runs.cancel(created.runId, 'codyalves', 'session stopped');
+
+    expect(cancelled?.state).toBe('Cancelled');
+    expect(await new StepQueue(t.db).claim('worker-1', ['triage'], 60_000)).toBeNull();
+    const step = await t.db.selectFrom('step').select(['status', 'last_error']).executeTakeFirstOrThrow();
+    expect(step).toEqual({ status: 'dead_lettered', last_error: 'run cancelled: session stopped' });
+    const types = (await new AuditStore(t.db).readRun(created.runId)).map((e) => e.type);
+    expect(types.slice(-2)).toEqual(['run.cancelled', 'run.state_changed']);
+    expect(await new AuditStore(t.db).verifyInDatabase()).toEqual([]);
+
+    // A finished run stays as it is, and the issue can start a new run.
+    expect(await runs.cancel(created.runId, 'codyalves', 'again')).toBeNull();
+    expect((await runs.createFromIssue(issue, 'github', 'delivery-again')).outcome).toBe('created');
   });
 
   it('lets only one of two concurrent orchestrators claim a run', async () => {

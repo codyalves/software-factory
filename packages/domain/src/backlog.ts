@@ -3,8 +3,13 @@
  * the backlog runner reads the issues and runs each one like a manual run.
  */
 
+import { isRunState, isTerminal } from './run-state-machine.ts';
+
 /** Issues with this label are ready for the factory. */
 export const READY_LABEL = 'factory:ready';
+
+/** The owner's queue: work the factory tried and could not ship on its own. */
+export const NEEDS_OWNER_LABEL = 'needs-owner';
 
 export interface BacklogIssue {
   readonly number: number;
@@ -58,4 +63,20 @@ export function nextFromBacklog(
     blocked.push({ number: issue.number, on: waitingOn });
   }
   return { next: null, blocked };
+}
+
+/**
+ * What the backlog does with a ready issue, given the state of its latest
+ * run. Only one session runs at a time, so an unfinished run that is not
+ * waiting for the owner was left by a session that stopped: it is cancelled
+ * and the issue runs again. A run held for review is the owner's to finish.
+ */
+export function previousRunAction(state: string | null): 'run' | 'held' | 'cancel-and-run' {
+  if (state === null || !isRunState(state) || isTerminal(state)) return 'run';
+  return state === 'Reviewing' ? 'held' : 'cancel-and-run';
+}
+
+/** After a run, whether the issue leaves the ready queue for the owner's. */
+export function needsOwnerAfter(state: string): boolean {
+  return state === 'Reviewing' || state === 'Escalated' || state === 'Rejected' || state === 'Cancelled';
 }

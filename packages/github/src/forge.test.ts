@@ -496,3 +496,26 @@ describe('GitHubForge after a merge', () => {
     expect(mutations[1]).toMatchObject({ variables: { id: 'PR_13' } });
   });
 });
+
+describe('GitHubForge.relabel', () => {
+  it('swaps the ready label for the owner one, even if the first is already gone', async () => {
+    const github = fakeGitHub({
+      'DELETE /repos/codyalves/target/issues/21/labels/factory%3Aready': () =>
+        json({ message: 'Label does not exist' }, 404),
+      'POST /repos/codyalves/target/issues/21/labels': () => json([{ name: 'needs-owner' }]),
+    });
+
+    await new GitHubForge({ auth, fetch: github.fetch }).relabel(
+      'codyalves/target',
+      21,
+      'factory:ready',
+      'needs-owner',
+    );
+
+    expect(github.requests.map((r) => `${r.method} ${r.path}`)).toEqual([
+      'DELETE /repos/codyalves/target/issues/21/labels/factory%3Aready',
+      'POST /repos/codyalves/target/issues/21/labels',
+    ]);
+    expect(github.requests[1]?.body).toEqual({ labels: ['needs-owner'] });
+  });
+});

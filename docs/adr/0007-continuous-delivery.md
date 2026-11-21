@@ -47,6 +47,13 @@ closed, waits for it to ship, be held or escalate, and takes the next. It
 stops when nothing is ready, at its run limit, or when the daily budget or a
 pause stops a run. The owner still decides when it runs.
 
+An issue the factory could not ship (held for review, escalated, rejected or
+cancelled) moves from `factory:ready` to `needs-owner`, so the next session
+does not run it again; the owner re-adds `factory:ready` to retry. Stopping a
+session part-way leaves a run unfinished: the next session cancels it (its
+steps are stopped, and the audit log says who and why) and runs the issue
+again.
+
 ## Consequences
 
 - The owner approves pull requests on the factory, not on the target.

@@ -28,12 +28,16 @@ import {
   FactoryControl,
   migrate,
   OutboxRelay,
+  RunStore,
 } from '@factory/db';
 import {
   type DeployState,
+  NEEDS_OWNER_LABEL,
+  needsOwnerAfter,
   nextFromBacklog,
   type PostDeployDecision,
   postDeployDecision,
+  previousRunAction,
   READY_LABEL,
 } from '@factory/domain';
 import { GitHubAppAuth, GitHubForge, parsePrivateKey } from '@factory/github';
@@ -244,11 +248,31 @@ try {
 
     const issue = choice.next;
     tried.add(issue.number);
+    const title = issue.title.replace(/\|/g, '\\|');
+
+    // Only one session runs at a time, so an unfinished run is either held
+    // for the owner or was left by a session that stopped.
+    const previous = await latestRun(issue.number);
+    const action = previousRunAction(previous?.state ?? null);
+    if (action === 'held') {
+      await forge.relabel(repo, issue.number, label, NEEDS_OWNER_LABEL);
+      lines.push(`| #${issue.number} ${title} | still held for review; moved to \`${NEEDS_OWNER_LABEL}\` |`);
+      i--; // Not a run.
+      continue;
+    }
+    if (action === 'cancel-and-run' && previous) {
+      await new RunStore(db).cancel(
+        previous.id,
+        args.actor ?? 'manual',
+        'a stopped session left it unfinished',
+      );
+      console.error(`backlog: cancelled the unfinished run ${previous.id} for #${issue.number}`);
+    }
+
     console.error(`backlog: running #${issue.number} ${issue.title}`);
     const code = await runIssue(issue.number);
     const run = await latestRun(issue.number);
     const state = run?.state ?? null;
-    const title = issue.title.replace(/\|/g, '\\|');
 
     if (code !== 0) {
       lines.push(`| #${issue.number} ${title} | ${state ?? 'no run'} |`);
@@ -261,7 +285,9 @@ try {
       break;
     }
     if (state !== 'Merged') {
-      lines.push(`| #${issue.number} ${title} | ${state} |`);
+      // Out of the ready queue and into the owner's, so the next session does not repeat it.
+      if (needsOwnerAfter(state)) await forge.relabel(repo, issue.number, label, NEEDS_OWNER_LABEL);
+      lines.push(`| #${issue.number} ${title} | ${state}; moved to \`${NEEDS_OWNER_LABEL}\` |`);
       continue;
     }
     const check = await checkProduction(issue, run);
