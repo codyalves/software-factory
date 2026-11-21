@@ -306,6 +306,141 @@ main {
   max-width: 62ch;
 }
 
+/* ------------------------------------------------------------- the control panel */
+
+section + section,
+.panel-box + section {
+  margin-top: 2.5rem;
+}
+
+section > h2 {
+  margin: 0 0 0.75rem;
+  font-size: 1.15rem;
+}
+
+.panel-box {
+  max-width: 62rem;
+}
+
+.panel-box .fields {
+  margin-bottom: 1rem;
+}
+
+.notice {
+  padding: 0.6rem 0.9rem;
+  border-left: 3px solid var(--pen);
+  background: var(--sheet);
+  max-width: 62ch;
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: end;
+  gap: 0.75rem 1rem;
+}
+
+.button {
+  font: inherit;
+  font-weight: 600;
+  padding: 0.5rem 1rem;
+  color: var(--sheet);
+  background: var(--pen);
+  border: 1.5px solid var(--pen);
+  cursor: pointer;
+}
+
+.button-quiet {
+  color: var(--fail);
+  background: transparent;
+  border-color: currentColor;
+}
+
+.button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.link-button {
+  font: inherit;
+  padding: 0;
+  color: var(--pen);
+  background: none;
+  border: 0;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.form {
+  display: grid;
+  gap: 1.25rem;
+  max-width: 44rem;
+}
+
+.field {
+  display: grid;
+  gap: 0.3rem;
+}
+
+.field > span:first-child {
+  font-weight: 600;
+}
+
+.field .hint {
+  font-size: 0.85rem;
+  color: var(--ink-soft);
+}
+
+.field input,
+.field textarea,
+.field-inline input {
+  font: inherit;
+  padding: 0.5rem 0.6rem;
+  color: var(--ink);
+  background: var(--sheet);
+  border: 1px solid var(--rule-strong);
+}
+
+.field-inline {
+  display: grid;
+  gap: 0.3rem;
+  font-size: 0.85rem;
+  color: var(--ink-soft);
+}
+
+.field-inline input {
+  width: 8rem;
+}
+
+.form-error {
+  margin: 0;
+  color: var(--fail);
+}
+
+.plain-list {
+  padding-left: 1.1rem;
+}
+
+.plain-list li + li {
+  margin-top: 0.35rem;
+}
+
+.live {
+  font-size: 0.85rem;
+  color: var(--ink-soft);
+}
+
+.rail-user {
+  margin-top: 1.25rem;
+  font-size: 0.85rem;
+  color: var(--ink-soft);
+}
+
+:focus-visible {
+  outline: 2px solid var(--pen);
+  outline-offset: 2px;
+}
+
 /* ------------------------------------------------------------- the run record */
 
 .record-head {

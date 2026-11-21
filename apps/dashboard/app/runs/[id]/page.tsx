@@ -1,8 +1,10 @@
+import { isRunState, isTerminal } from '@factory/domain';
 import type { Metadata } from 'next';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import type { ReactNode } from 'react';
-import { AuditThread } from '@/components/audit-thread';
+import { AuditThread, describe } from '@/components/audit-thread';
+import { LiveRefresh } from '@/components/live-refresh';
 import { Risk, StateStamp, Verdict } from '@/components/stamps';
 import { reports } from '@/lib/data';
 import { commitUrl, issueUrl, percent, shortSha, testUrl, usd, utc } from '@/lib/format';
@@ -56,6 +58,10 @@ export default async function RunPage({ params }: Params) {
   if (!run) notFound();
 
   const last = run.timeline.at(-1);
+  const latestEvent = run.events.filter((e) => !e.type.startsWith('step.')).at(-1);
+  const production = run.events.findLast(
+    (e) => e.type === 'delivery.verified' || e.type === 'delivery.check_failed',
+  );
   const finalAttempt = run.attempts.at(-1);
   const finalRisk = finalAttempt?.risk;
   const sections: { title: string; lede?: string; body: ReactNode }[] = [];
@@ -268,6 +274,8 @@ export default async function RunPage({ params }: Params) {
           <StateStamp state={run.state} />
           {last ? <span className="muted"> {last.reason}</span> : null}
         </div>
+        {/* Held for review waits on a person, so there is nothing to follow. */}
+        <LiveRefresh active={isRunState(run.state) && !isTerminal(run.state) && run.state !== 'Reviewing'} />
       </header>
 
       <dl className="fields">
@@ -313,6 +321,26 @@ export default async function RunPage({ params }: Params) {
           <dt>Started</dt>
           <dd>{utc(run.createdAt)}</dd>
         </div>
+        {latestEvent ? (
+          <div>
+            <dt>Latest event</dt>
+            <dd>
+              {describe(latestEvent).what}, {utc(latestEvent.at)}
+            </dd>
+          </div>
+        ) : null}
+        {production ? (
+          <div>
+            <dt>Production</dt>
+            <dd>
+              {production.type === 'delivery.verified' ? (
+                <span className="pass">Checked: nothing new found</span>
+              ) : (
+                <span className="fail">{describe(production).detail}</span>
+              )}
+            </dd>
+          </div>
+        ) : null}
         <div>
           <dt>Run</dt>
           <dd className="mono">{run.id}</dd>

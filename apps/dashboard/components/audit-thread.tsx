@@ -48,6 +48,30 @@ export function describe(event: ThreadEvent): { what: string; detail: string } {
         what: `Risk raised from ${field(p, 'from') || 'none'} to ${field(p, 'to')}`,
         detail: 'measured from the diff',
       };
+    case 'delivery.decided':
+      return {
+        what:
+          field(p, 'decision') === 'merge'
+            ? 'Cleared to ship without a person'
+            : 'Held for the owner’s review',
+        detail: field(p, 'reason'),
+      };
+    case 'delivery.merged':
+      return { what: 'Merged after the target’s checks passed', detail: field(p, 'mergeSha').slice(0, 12) };
+    case 'delivery.failed':
+      return { what: 'Could not ship', detail: field(p, 'reason') };
+    case 'delivery.verified':
+      return { what: 'Checked on production: nothing new found', detail: field(p, 'url') };
+    case 'delivery.check_failed':
+      return {
+        what:
+          field(p, 'action') === 'revert'
+            ? 'Production check failed: reverting'
+            : 'Production check stopped the session',
+        detail: field(p, 'reason'),
+      };
+    case 'run.cancelled':
+      return { what: `Cancelled by ${field(p, 'actor')}`, detail: field(p, 'reason') };
     case 'outbox.sent':
       return { what: 'Sent to GitHub', detail: field(p, 'kind') };
     case 'outbox.retry_scheduled':

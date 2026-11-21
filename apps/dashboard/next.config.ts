@@ -2,7 +2,7 @@ import type { NextConfig } from 'next';
 
 const config: NextConfig = {
   // The factory's packages are TypeScript sources with .ts import paths.
-  transpilePackages: ['@factory/db', '@factory/domain'],
+  transpilePackages: ['@factory/db', '@factory/domain', '@factory/github'],
   serverExternalPackages: ['pg'],
   // `pnpm typecheck` checks this app with its own tsconfig.
   typescript: { ignoreBuildErrors: true },
