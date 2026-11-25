@@ -1,7 +1,9 @@
 import Link from 'next/link';
-import { controlConfig, currentLogin } from '@/lib/control';
+import { setProjectAction } from '@/app/actions';
+import { controlConfig, currentLogin, currentProject } from '@/lib/control';
 import { factoryStatus, reports } from '@/lib/data';
 import { usd } from '@/lib/format';
+import { projectName } from '@/lib/projects';
 import { Nav } from './nav';
 
 /** The left rail: where you are, and the factory's state right now. */
@@ -12,12 +14,25 @@ export async function Rail() {
     currentLogin(),
   ]);
   const intact = audit.problems.length === 0;
+  const config = controlConfig();
+  const project = config ? await currentProject(config) : null;
   return (
     <aside className="rail">
       <Link href="/" className="rail-name">
         Software factory
         <span>Run records</span>
       </Link>
+      {config && project && config.projects.length > 1 ? (
+        <form action={setProjectAction} className="rail-projects" aria-label="Project">
+          <input type="hidden" name="back" value="/" />
+          <span className="rail-projects-label">Project</span>
+          {config.projects.map((p) => (
+            <button key={p} type="submit" name="project" value={p} aria-pressed={p === project} title={p}>
+              {projectName(p)}
+            </button>
+          ))}
+        </form>
+      ) : null}
       <Nav />
       <dl className="rail-status">
         <div>
@@ -39,7 +54,7 @@ export async function Rail() {
           </dd>
         </div>
       </dl>
-      {controlConfig() ? (
+      {config ? (
         <div className="rail-user">
           {login ? (
             <form action="/auth/logout" method="post">

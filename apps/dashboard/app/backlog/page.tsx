@@ -7,6 +7,7 @@ import {
   type ControlConfig,
   controlConfig,
   currentOwner,
+  currentProject,
   latestRunsByIssue,
   openTargetIssues,
 } from '@/lib/control';
@@ -16,16 +17,18 @@ import { startSessionAction, stopSessionAction } from '../actions';
 
 export const metadata: Metadata = { title: 'Backlog' };
 
-async function readGitHub(config: ControlConfig) {
+async function readGitHub(config: ControlConfig, repo: string) {
   const [issues, runs, sessions] = await Promise.all([
-    openTargetIssues(config),
-    latestRunsByIssue(config.targetRepo),
+    openTargetIssues(config, repo),
+    latestRunsByIssue(repo),
     activeSessions(config),
   ]);
   return { issues, runs, sessions };
 }
 
-type Search = { searchParams: Promise<{ filed?: string; started?: string; stopped?: string }> };
+type Search = {
+  searchParams: Promise<{ filed?: string; planned?: string; started?: string; stopped?: string }>;
+};
 
 function Issue({ row, repo }: { row: BacklogRow; repo: string }) {
   return (
@@ -70,10 +73,10 @@ export default async function BacklogPage({ searchParams }: Search) {
     );
   }
 
-  const [owner, status] = await Promise.all([currentOwner(), factoryStatus()]);
+  const [owner, status, repo] = await Promise.all([currentOwner(), factoryStatus(), currentProject(config)]);
   let github: Awaited<ReturnType<typeof readGitHub>>;
   try {
-    github = await readGitHub(config);
+    github = await readGitHub(config, repo);
   } catch (error) {
     return (
       <>
@@ -97,17 +100,32 @@ export default async function BacklogPage({ searchParams }: Search) {
       <header className="page-head">
         <h1>Backlog</h1>
         <p className="lede">
-          Open issues on <a href={`https://github.com/${config.targetRepo}/issues`}>{config.targetRepo}</a>,
-          in the order the factory takes them. An issue is ready when it carries the{' '}
-          <span className="mono">factory:ready</span> label; one that says “Depends on #N” waits for #N to
-          close.
+          Open issues on <a href={`https://github.com/${repo}/issues`}>{repo}</a>, in the order the factory
+          takes them. An issue is ready when it carries the <span className="mono">factory:ready</span> label;
+          one that says “Depends on #N” waits for #N to close.
         </p>
       </header>
 
       {notice.filed ? (
         <p className="notice">
-          Filed <a href={issueUrl(config.targetRepo, Number(notice.filed))}>#{notice.filed}</a>. It is ready
-          for the next session.
+          Filed <a href={issueUrl(repo, Number(notice.filed))}>#{notice.filed}</a>. It is ready for the next
+          session.
+        </p>
+      ) : null}
+      {notice.planned ? (
+        <p className="notice">
+          Filed{' '}
+          {notice.planned
+            .split(',')
+            .map(Number)
+            .filter((n) => n > 0)
+            .map((n, i) => (
+              <span key={n}>
+                {i > 0 ? ', ' : ''}
+                <a href={issueUrl(repo, n)}>#{n}</a>
+              </span>
+            ))}{' '}
+          from the plan, in order. Start a session to build them.
         </p>
       ) : null}
       {notice.started ? <p className="notice">Session requested. GitHub starts it within a minute.</p> : null}
@@ -199,7 +217,7 @@ export default async function BacklogPage({ searchParams }: Search) {
                   <tr key={row.number}>
                     <td className="num">Now</td>
                     <td>
-                      <Issue row={row} repo={config.targetRepo} />
+                      <Issue row={row} repo={repo} />
                     </td>
                     <td>
                       <LastRun row={row} />
@@ -210,7 +228,7 @@ export default async function BacklogPage({ searchParams }: Search) {
                   <tr key={row.number}>
                     <td className="num">{i + 1}</td>
                     <td>
-                      <Issue row={row} repo={config.targetRepo} />
+                      <Issue row={row} repo={repo} />
                     </td>
                     <td>
                       <LastRun row={row} />
@@ -230,7 +248,7 @@ export default async function BacklogPage({ searchParams }: Search) {
           <ul className="plain-list">
             {view.blocked.map((row) => (
               <li key={row.number}>
-                <Issue row={row} repo={config.targetRepo} />{' '}
+                <Issue row={row} repo={repo} />{' '}
                 <span className="muted">waits on {row.on.map((n) => `#${n}`).join(', ')}</span>
               </li>
             ))}
@@ -257,7 +275,7 @@ export default async function BacklogPage({ searchParams }: Search) {
                 {view.owner.map((row) => (
                   <tr key={row.number}>
                     <td>
-                      <Issue row={row} repo={config.targetRepo} />
+                      <Issue row={row} repo={repo} />
                     </td>
                     <td>
                       <LastRun row={row} />
