@@ -967,3 +967,32 @@ details.all-events > summary {
     gap: 0.2rem;
   }
 }
+
+/* ------------------------------------------------------------- the status page */
+
+.status-run {
+  max-width: 62rem;
+}
+
+.status-run .fields {
+  margin: 0;
+  border-width: 0 0 1px;
+}
+
+.status-run-caption {
+  padding: 0.7rem 0.9rem 0;
+  font-size: 0.85rem;
+}
+
+.status-run .thread {
+  padding: 0.5rem 0.9rem 0.25rem;
+}
+
+.status-sub {
+  margin: 1.5rem 0 0.6rem;
+}
+
+.page-head .live {
+  display: block;
+  margin-top: 0.5rem;
+}
