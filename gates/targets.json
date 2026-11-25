@@ -92,6 +92,11 @@
         "app/api/**"
       ]
     },
-    "commandTimeoutMs": 600000
+    "commandTimeoutMs": 600000,
+    "production": {
+      "url": "https://brewery-coral.vercel.app",
+      "environment": "Production",
+      "statusContext": "Vercel"
+    }
   }
 }
