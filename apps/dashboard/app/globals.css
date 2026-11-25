@@ -827,3 +827,143 @@ details.all-events > summary {
     animation: none !important;
   }
 }
+
+/* ------------------------------------------------------------- the workspace */
+
+.rail-projects {
+  display: grid;
+  gap: 0.25rem;
+  font-size: 0.9rem;
+}
+
+.rail-projects-label {
+  font-size: 0.85rem;
+  color: var(--ink-soft);
+}
+
+.rail-projects button {
+  font: inherit;
+  text-align: left;
+  padding: 0.35rem 0.6rem;
+  color: var(--ink);
+  background: transparent;
+  border: 1px solid var(--rule);
+  cursor: pointer;
+}
+
+.rail-projects button[aria-pressed='true'] {
+  background: var(--sheet);
+  border-color: var(--pen);
+  font-weight: 600;
+}
+
+.plan-ask textarea {
+  min-height: 8rem;
+}
+
+.plan {
+  display: grid;
+  gap: 1.25rem;
+  max-width: 52rem;
+}
+
+.plan-head p {
+  margin: 0 0 0.35rem;
+  max-width: 70ch;
+}
+
+.plan-issues {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 1rem;
+}
+
+.plan-issue {
+  display: grid;
+  gap: 0.9rem;
+  padding: 1rem 1.1rem 1.1rem;
+  background: var(--sheet);
+  border: 1px solid var(--rule);
+  border-left: 3px solid var(--pen);
+}
+
+.plan-issue-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 1rem;
+}
+
+.plan-n {
+  font-weight: 700;
+}
+
+.plan-issue-head .link-button {
+  font-size: 0.85rem;
+  color: var(--fail);
+}
+
+.plan-deps {
+  display: grid;
+  gap: 0.35rem;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.plan-deps legend {
+  font-weight: 600;
+  margin-bottom: 0.3rem;
+}
+
+.plan-warn {
+  padding: 0.6rem 0.9rem;
+  background: var(--amber-wash);
+  border-left: 3px solid var(--amber);
+}
+
+.plan-warn p {
+  margin: 0;
+}
+
+.plan-warn ul {
+  margin: 0.4rem 0 0;
+  padding-left: 1.1rem;
+}
+
+.feed {
+  margin-top: 3rem;
+  max-width: 52rem;
+}
+
+.feed-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.feed-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  border-top: 1px solid var(--rule);
+}
+
+.feed-list li {
+  display: grid;
+  grid-template-columns: 8.5rem 1fr auto;
+  gap: 0.75rem;
+  align-items: baseline;
+  padding: 0.55rem 0;
+  border-bottom: 1px solid var(--rule);
+}
+
+@media (max-width: 40rem) {
+  .feed-list li {
+    grid-template-columns: 1fr;
+    gap: 0.2rem;
+  }
+}

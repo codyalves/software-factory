@@ -3,6 +3,7 @@ import type { ForgeIssue } from '@factory/domain';
 import { GitHubAppAuth, GitHubForge, githubRequest, parsePrivateKey } from '@factory/github';
 import { cookies } from 'next/headers';
 import { reports } from './data';
+import { PROJECT_COOKIE, pickProject, projectList } from './projects';
 import { isOwner, readSession, SESSION_COOKIE } from './session';
 
 /**
@@ -19,7 +20,8 @@ export interface ControlConfig {
   readonly sessionSecret: string;
   readonly owners: string;
   readonly factoryRepo: string;
-  readonly targetRepo: string;
+  /** The target repositories the factory builds; the first is the default project. */
+  readonly projects: readonly string[];
 }
 
 /** Null until every setting is present (docs/dashboard.md); the panel then stays read-only. */
@@ -33,11 +35,16 @@ export function controlConfig(): ControlConfig | null {
     sessionSecret: env.SESSION_SECRET ?? '',
     owners: env.DASHBOARD_OWNERS ?? '',
     factoryRepo: env.FACTORY_REPO || 'codyalves/software-factory',
-    targetRepo: env.TARGET_REPO || 'codyalves/factory-target-app',
+    projects: projectList(env.TARGET_REPOS || env.TARGET_REPO || 'codyalves/factory-target-app'),
   };
   const complete =
     config.appId && config.privateKey && config.clientId && config.clientSecret && config.owners;
-  return complete && config.sessionSecret.length >= 32 ? config : null;
+  return complete && config.sessionSecret.length >= 32 && config.projects.length > 0 ? config : null;
+}
+
+/** The project the owner picked in the switcher, if it is still one of the projects. */
+export async function currentProject(config: ControlConfig): Promise<string> {
+  return pickProject(config.projects, (await cookies()).get(PROJECT_COOKIE)?.value);
 }
 
 /** The signed-in GitHub login, if any. */
@@ -76,22 +83,38 @@ async function appRequest(config: ControlConfig, repo: string) {
   };
 }
 
-export async function openTargetIssues(config: ControlConfig): Promise<ForgeIssue[]> {
-  return new GitHubForge({ auth: appAuth(config) }).openIssues(config.targetRepo);
+export async function openTargetIssues(config: ControlConfig, repo: string): Promise<ForgeIssue[]> {
+  return new GitHubForge({ auth: appAuth(config) }).openIssues(repo);
 }
 
 export async function fileIssue(
   config: ControlConfig,
+  repo: string,
   draft: { title: string; body: string; labels: string[] },
 ): Promise<{ number: number; url: string }> {
-  const request = await appRequest(config, config.targetRepo);
+  const request = await appRequest(config, repo);
   const created = await githubRequest<{ number: number; html_url: string }>(
     request,
     'POST',
-    `/repos/${config.targetRepo}/issues`,
+    `/repos/${repo}/issues`,
     draft,
   );
   return { number: created.number, url: created.html_url };
+}
+
+/** A target's CLAUDE.md on its default branch, so the planner follows its conventions. */
+export async function repoConventions(config: ControlConfig, repo: string): Promise<string | null> {
+  try {
+    const request = await appRequest(config, repo);
+    const file = await githubRequest<{ content: string; encoding: string }>(
+      request,
+      'GET',
+      `/repos/${repo}/contents/CLAUDE.md`,
+    );
+    return Buffer.from(file.content, file.encoding === 'base64' ? 'base64' : 'utf8').toString('utf8');
+  } catch {
+    return null;
+  }
 }
 
 export interface Session {
@@ -127,6 +150,7 @@ export async function activeSessions(config: ControlConfig): Promise<Session[]> 
 
 export async function startBacklogSession(
   config: ControlConfig,
+  repo: string,
   input: { maxRuns: number; dailyBudget: number; requestedBy: string },
 ): Promise<void> {
   const request = await appRequest(config, config.factoryRepo);
@@ -137,7 +161,7 @@ export async function startBacklogSession(
     {
       ref: 'main',
       inputs: {
-        repo: config.targetRepo,
+        repo,
         max_runs: String(input.maxRuns),
         daily_budget: String(input.dailyBudget),
         requested_by: input.requestedBy,

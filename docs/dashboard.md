@@ -42,8 +42,9 @@ demo of demo data.
 
 ## Control panel
 
-With the settings below, the dashboard can also act: sign in with GitHub, file
-a request (an issue labeled `factory:ready`), see the backlog in the order the
+With the settings below, the dashboard can also act: sign in with GitHub, plan
+a feature into issues and file them, file a single request (an issue labeled
+`factory:ready`), switch between the sites the factory builds, see the backlog in the order the
 factory will take it, and start or stop a backlog session. Without them it
 stays read-only, and every page still works.
 
@@ -65,6 +66,17 @@ How it stays safe:
   form also asks triage's own spec question, with triage's prompt and model
   (a fraction of a cent). The owner can tick "File anyway"; triage still
   decides.
+- **The planner drafts; the owner files.** The workspace (`/`) takes a feature
+  in plain words and asks Claude (`prompts/plan.v1.md`, `PLANNER_MODEL`,
+  default Sonnet) to split it into up to 8 small issues, reading the target's
+  CLAUDE.md and open issues. The plan is only a draft on screen: the owner
+  edits titles, criteria and order, and nothing reaches GitHub until "File".
+  Each issue then passes the request form's own rules and is filed in order,
+  later ones saying "Depends on" the numbers earlier ones got. A plan costs a
+  few cents, shown with the draft, and is outside the factory's daily budget.
+- **Projects.** `TARGET_REPOS` lists the sites (the first is the default).
+  The switcher only changes what the workspace shows and where work is filed;
+  filing a plan checks it was drafted for the current project.
 - **Requests cannot forge the factory's markers.** HTML comments are refused,
   and the description must be prose, so the acceptance criteria are exactly
   the ones listed.
@@ -92,8 +104,9 @@ How it stays safe:
    | `GITHUB_APP_CLIENT_SECRET` | The client secret from step 1 |
    | `SESSION_SECRET` | 32 or more random characters, used only to sign sessions |
    | `DASHBOARD_OWNERS` | GitHub logins that may act, comma-separated |
-   | `FACTORY_REPO`, `TARGET_REPO` | Optional; default to the factory and its target |
-   | `ANTHROPIC_API_KEY` | Optional; turns on triage's spec check in the request form. A key with a low spend limit is plenty. |
+   | `FACTORY_REPO` | Optional; defaults to `codyalves/software-factory` |
+   | `TARGET_REPOS` | The sites, comma separated, default first: `codyalves/brewery,codyalves/factory-target-app` (`TARGET_REPO` still works for one) |
+   | `ANTHROPIC_API_KEY` | Turns on the planner and triage's spec check in the request form. A key with a low spend limit is plenty. |
 
 ## Design
 

@@ -43,5 +43,55 @@
       "environment": "Production",
       "statusContext": "Vercel"
     }
+  },
+  "codyalves/brewery": {
+    "baseBranch": "main",
+    "setup": [
+      ["pnpm", "install", "--frozen-lockfile"],
+      ["pnpm", "exec", "playwright", "install", "chromium"]
+    ],
+    "gates": {
+      "lint": ["pnpm", "lint"],
+      "typecheck": ["pnpm", "typecheck"],
+      "unit_tests": ["pnpm", "test"],
+      "build": ["pnpm", "build"],
+      "e2e": ["pnpm", "test:e2e"]
+    },
+    "protectedPaths": [
+      ".github/**",
+      "package.json",
+      "pnpm-lock.yaml",
+      "pnpm-workspace.yaml",
+      "tsconfig.json",
+      "biome.json",
+      "vitest.config.*",
+      "next.config.*",
+      "CLAUDE.md",
+      "tests/regressions/**",
+      "playwright.config.*",
+      "DESIGN.md",
+      "public/fonts/**"
+    ],
+    "riskPaths": {
+      "high": [
+        "**/migrations/**",
+        "**/auth/**",
+        "**/*auth*.*",
+        "middleware.ts",
+        "**/payments/**",
+        "**/billing/**",
+        ".env*"
+      ],
+      "medium": [
+        "lib/scryfall.ts",
+        "lib/cards.ts",
+        "lib/storage.ts",
+        "lib/deck.ts",
+        "components/footer.tsx",
+        "app/layout.tsx",
+        "app/api/**"
+      ]
+    },
+    "commandTimeoutMs": 600000
   }
 }

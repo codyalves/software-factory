@@ -1,78 +1,93 @@
 import Link from 'next/link';
-import { Risk, StateStamp } from '@/components/stamps';
+import { LiveRefresh } from '@/components/live-refresh';
+import { StateStamp } from '@/components/stamps';
+import { activeSessions, controlConfig, currentLogin, currentOwner, currentProject } from '@/lib/control';
 import { reports } from '@/lib/data';
-import { usd, utc } from '@/lib/format';
+import { utc } from '@/lib/format';
+import { plannerAvailable } from '@/lib/planner';
+import { projectName } from '@/lib/projects';
+import { PlanWorkspace } from './plan-workspace';
 
-export default async function RunsPage() {
-  const runs = await reports().listRuns({ limit: 200 });
-  const shipped = runs.filter((r) => r.pullRequestUrl).length;
-  const spent = runs.reduce((sum, r) => sum + r.spentUsd, 0);
+const MOVING = new Set(['Intake', 'Triage', 'Planning', 'Implementing', 'Gating', 'Merging']);
+
+/** The workspace: say what the site should do next, review the plan, file it, watch it build. */
+export default async function WorkspacePage() {
+  const config = controlConfig();
+  const [owner, login] = await Promise.all([currentOwner(), currentLogin()]);
+  const repo = config ? await currentProject(config) : null;
+  const [runs, sessions] = await Promise.all([
+    reports().listRuns({ limit: 200 }),
+    config && owner ? activeSessions(config).catch(() => []) : Promise.resolve([]),
+  ]);
+  const recent = runs.filter((r) => r.repo === repo).slice(0, 8);
+  const moving = sessions.length > 0 || recent.some((r) => MOVING.has(r.state));
 
   return (
     <>
       <header className="page-head">
-        <h1>Runs</h1>
+        <h1>{repo ? `What should ${projectName(repo)} do next?` : 'Workspace'}</h1>
         <p className="lede">
-          {runs.length === 0
-            ? 'Every issue the factory picks up gets a run, recorded here step by step.'
-            : `${runs.length} ${runs.length === 1 ? 'issue' : 'issues'} picked up, ${shipped} turned into a pull request, ${usd(spent)} spent in total.`}
+          Describe a feature in plain words. The planner splits it into small issues, each with criteria a
+          test can check. Edit the plan, file it, and the factory builds it in order.
         </p>
       </header>
 
-      {runs.length === 0 ? (
+      {!config || !repo ? (
         <div className="empty">
-          No runs yet. Start one from the factory-run workflow with an issue number, and its record will
-          appear here.
+          The control panel is not set up on this dashboard yet (see docs/dashboard.md).
+        </div>
+      ) : !owner ? (
+        <div className="empty">
+          {login ? (
+            <>Signed in as {login}, who is not an owner of this factory, so this account can only read. </>
+          ) : (
+            <>
+              <a href="/auth/login">Sign in with GitHub</a> as an owner to plan work.{' '}
+            </>
+          )}
+          Anyone can read the <Link href="/runs">runs</Link> and the <Link href="/backlog">backlog</Link>.
+        </div>
+      ) : !plannerAvailable() ? (
+        <div className="empty">
+          The planner needs <span className="mono">ANTHROPIC_API_KEY</span> on the dashboard. Until then,{' '}
+          <Link href="/requests/new">write one issue yourself</Link>.
         </div>
       ) : (
-        <div className="table-wrap">
-          <table className="ledger">
-            <thead>
-              <tr>
-                <th scope="col">Issue</th>
-                <th scope="col">State</th>
-                <th scope="col">Risk</th>
-                <th scope="col" className="num">
-                  Attempts
-                </th>
-                <th scope="col" className="num">
-                  Spent
-                </th>
-                <th scope="col">Pull request</th>
-                <th scope="col">Last change</th>
-              </tr>
-            </thead>
-            <tbody>
-              {runs.map((r) => (
-                <tr key={r.id}>
-                  <td>
-                    <Link href={`/runs/${r.id}`}>{r.title}</Link>
-                    <div className="muted">
-                      {r.repo}#{r.issueNumber}
-                    </div>
-                  </td>
-                  <td>
-                    <StateStamp state={r.state} />
-                  </td>
-                  <td>
-                    <Risk level={r.riskLevel} />
-                  </td>
-                  <td className="num">{r.implementAttempts}</td>
-                  <td className="num">{usd(r.spentUsd)}</td>
-                  <td>
-                    {r.pullRequestUrl ? (
-                      <a href={r.pullRequestUrl}>#{r.pullRequestUrl.split('/').pop()}</a>
-                    ) : (
-                      <span className="muted">None</span>
-                    )}
-                  </td>
-                  <td className="muted">{utc(r.updatedAt)}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+        <PlanWorkspace repo={repo} />
       )}
+
+      {repo ? (
+        <section className="feed" aria-labelledby="feed">
+          <div className="feed-head">
+            <h2 id="feed">Building now</h2>
+            <LiveRefresh active={moving} everyMs={10_000} />
+          </div>
+          {sessions.length > 0 ? (
+            <p className="notice">
+              A factory session is <a href={sessions[0]?.url}>{sessions[0]?.status.replace('_', ' ')}</a>.
+              Stop it from the <Link href="/backlog">backlog</Link>.
+            </p>
+          ) : null}
+          {recent.length === 0 ? (
+            <div className="empty">
+              Nothing has been built on {repo} yet. File a plan, then start a session from the{' '}
+              <Link href="/backlog">backlog</Link>.
+            </div>
+          ) : (
+            <ol className="feed-list">
+              {recent.map((r) => (
+                <li key={r.id}>
+                  <StateStamp state={r.state} />
+                  <Link href={`/runs/${r.id}`}>
+                    #{r.issueNumber} {r.title}
+                  </Link>
+                  <span className="muted">{utc(r.updatedAt)}</span>
+                </li>
+              ))}
+            </ol>
+          )}
+        </section>
+      ) : null}
     </>
   );
 }

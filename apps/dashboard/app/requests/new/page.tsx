@@ -1,21 +1,22 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
-import { controlConfig, currentLogin, currentOwner } from '@/lib/control';
+import { controlConfig, currentLogin, currentOwner, currentProject } from '@/lib/control';
 import { RequestForm } from './request-form';
 
-export const metadata: Metadata = { title: 'New request' };
+export const metadata: Metadata = { title: 'Write one issue' };
 
 export default async function NewRequestPage() {
   const config = controlConfig();
   const [owner, login] = await Promise.all([currentOwner(), currentLogin()]);
+  const repo = config ? await currentProject(config) : 'the target';
   return (
     <>
       <header className="page-head">
-        <h1>New request</h1>
+        <h1>Write one issue</h1>
         <p className="lede">
-          Describe the work. The factory files it as an issue on {config?.targetRepo ?? 'the target'}, triages
-          it, and builds it in the next session. Each acceptance criterion becomes a test the work has to
-          pass.
+          For a single, well-understood change. The factory files it as an issue on {repo}, triages it, and
+          builds it in the next session. For anything bigger, <Link href="/">plan it</Link> instead. Each
+          acceptance criterion becomes a test the work has to pass.
         </p>
       </header>
       {!config ? (
