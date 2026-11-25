@@ -7,6 +7,7 @@ pauses or spends.
 
 | Page | Shows |
 | --- | --- |
+| Status | What is happening now: the session and the step it is on, the run in progress with its latest checks and events, runs a session left unfinished, and the target itself (open pull requests with their checks, the latest commits on its base branch, and whether each reached production) |
 | Runs | Every issue picked up: state, risk, attempts, spend, pull request |
 | Run record | One run in order: triage answers and how confident each was, the numbered acceptance criteria, every attempt with its check results and output, measured risk, the criterion-to-test trace, cost by model, and the run's events in the audit chain |
 | Traceability | Every requirement, criterion by criterion, with the tests that prove it and the commit they ran on |
@@ -14,6 +15,14 @@ pauses or spends.
 
 Everything on a page comes from tables the factory already keeps, so any
 figure can be checked against its source.
+
+The status page also reads GitHub, as the factory's App, when the control
+panel is set up: the factory's workflow runs for the session, and the target
+repository for pull requests, commits and deploys. It reads the production
+URL and deploy signal from `gates/targets.json`, the file the factory's own
+production check uses. It refreshes every 15 seconds while a session or a run
+is moving, at three GitHub calls a refresh. Without the control panel it shows
+the runs from the record and says what it cannot read.
 
 ## Run it locally
 

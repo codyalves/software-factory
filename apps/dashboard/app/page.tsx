@@ -65,7 +65,8 @@ export default async function WorkspacePage() {
           {sessions.length > 0 ? (
             <p className="notice">
               A factory session is <a href={sessions[0]?.url}>{sessions[0]?.status.replace('_', ' ')}</a>.
-              Stop it from the <Link href="/backlog">backlog</Link>.
+              Follow it on the <Link href="/status">status page</Link>; stop it from the{' '}
+              <Link href="/backlog">backlog</Link>.
             </p>
           ) : null}
           {recent.length === 0 ? (

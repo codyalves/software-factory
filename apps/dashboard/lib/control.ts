@@ -5,6 +5,14 @@ import { cookies } from 'next/headers';
 import { reports } from './data';
 import { PROJECT_COOKIE, pickProject, projectList } from './projects';
 import { isOwner, readSession, SESSION_COOKIE } from './session';
+import {
+  currentStep,
+  type SessionRecord,
+  type SiteQueryData,
+  type SiteState,
+  siteState,
+} from './status-view';
+import type { TargetSite } from './targets';
 
 /**
  * The control panel's link to GitHub, as the factory's own App. Every action
@@ -146,6 +154,96 @@ export async function activeSessions(config: ControlConfig): Promise<Session[]> 
     }
   }
   return found;
+}
+
+/** The latest factory sessions, running or finished, newest first. One call, for the status page. */
+export async function recentSessions(config: ControlConfig): Promise<SessionRecord[]> {
+  const request = await appRequest(config, config.factoryRepo);
+  const { workflow_runs: runs } = await githubRequest<{
+    workflow_runs: {
+      id: number;
+      name: string;
+      status: string;
+      conclusion: string | null;
+      html_url: string;
+      run_started_at: string;
+      updated_at: string;
+    }[];
+  }>(request, 'GET', `/repos/${config.factoryRepo}/actions/runs?per_page=100`);
+  return runs
+    .filter((r) => r.name === 'factory-backlog' || r.name === 'factory-run')
+    .map((r) => ({
+      id: r.id,
+      workflow: r.name,
+      status: r.status,
+      conclusion: r.conclusion,
+      url: r.html_url,
+      startedAt: r.run_started_at,
+      updatedAt: r.updated_at,
+    }));
+}
+
+/** The step a session's job is on now, by its name in the workflow; null between steps or once done. */
+export async function sessionStep(config: ControlConfig, runId: number): Promise<string | null> {
+  const request = await appRequest(config, config.factoryRepo);
+  const { jobs } = await githubRequest<{ jobs: { steps?: { name: string; status: string }[] }[] }>(
+    request,
+    'GET',
+    `/repos/${config.factoryRepo}/actions/runs/${runId}/jobs?per_page=10`,
+  );
+  return currentStep(jobs.flatMap((j) => j.steps ?? []));
+}
+
+// One call for everything the status page shows about the target: open pull
+// requests with their checks, and the base branch's latest commits with their
+// checks and production deploy (as a deployment or as a commit status).
+const SITE_QUERY = `
+query($owner: String!, $name: String!, $branch: String!, $environment: String!) {
+  repository(owner: $owner, name: $name) {
+    pullRequests(states: OPEN, first: 20, orderBy: { field: CREATED_AT, direction: DESC }) {
+      nodes {
+        number title url isDraft createdAt headRefName
+        commits(last: 1) { nodes { commit { statusCheckRollup { state } } } }
+      }
+    }
+    ref(qualifiedName: $branch) {
+      target {
+        ... on Commit {
+          history(first: 5) {
+            nodes {
+              oid messageHeadline committedDate url
+              statusCheckRollup { state }
+              status { contexts { context state } }
+              deployments(environments: [$environment], first: 1) { nodes { latestStatus { state } } }
+            }
+          }
+        }
+      }
+    }
+  }
+}`;
+
+/** The target's open pull requests and latest commits, with checks and production deploys. */
+export async function readSite(config: ControlConfig, repo: string, site: TargetSite): Promise<SiteState> {
+  const [owner, name] = repo.split('/');
+  const response = await githubRequest<{ data?: SiteQueryData; errors?: { message: string }[] }>(
+    await appRequest(config, repo),
+    'POST',
+    '/graphql',
+    {
+      query: SITE_QUERY,
+      variables: {
+        owner,
+        name,
+        branch: `refs/heads/${site.baseBranch}`,
+        environment: site.production?.environment ?? 'Production',
+      },
+    },
+  );
+  if (!response.data) {
+    throw new Error(response.errors?.map((e) => e.message).join('; ') || 'GitHub returned no data');
+  }
+  return siteState(response.data, site.production?.statusContext ?? 'Vercel');
 }
 
 export async function startBacklogSession(
