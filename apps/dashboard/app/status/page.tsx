@@ -193,7 +193,7 @@ export default async function StatusPage({ searchParams }: { searchParams: Promi
           ) : null}{' '}
           {repo && !(active && working) ? (
             <>
-              Showing <strong>{repo}</strong>, the selected project.{' '}
+              Showing <strong>{repo}</strong>, the project selected in the left rail.{' '}
             </>
           ) : null}
           Start or stop a session from the <Link href="/backlog">backlog</Link>.

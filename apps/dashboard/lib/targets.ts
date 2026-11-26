@@ -23,6 +23,11 @@ interface TargetEntry {
   };
 }
 
+/** Every repository the factory is set up to build: the keys of gates/targets.json, in its order. */
+export function targetRepos(): string[] {
+  return Object.keys(targets);
+}
+
 /** Defaults match the schema in apps/workers/src/gates.ts. An unlisted repo gets them all. */
 export function targetSite(repo: string): TargetSite {
   const entry = (targets as Readonly<Record<string, TargetEntry>>)[repo];

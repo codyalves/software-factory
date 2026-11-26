@@ -851,6 +851,11 @@ details.all-events > summary {
   cursor: pointer;
 }
 
+.rail-project-only {
+  padding: 0.35rem 0;
+  font-weight: 600;
+}
+
 .rail-projects button[aria-pressed='true'] {
   background: var(--sheet);
   border-color: var(--pen);

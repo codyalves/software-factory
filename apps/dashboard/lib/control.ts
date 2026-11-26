@@ -12,7 +12,7 @@ import {
   type SiteState,
   siteState,
 } from './status-view';
-import type { TargetSite } from './targets';
+import { type TargetSite, targetRepos } from './targets';
 
 /**
  * The control panel's link to GitHub, as the factory's own App. Every action
@@ -43,7 +43,9 @@ export function controlConfig(): ControlConfig | null {
     sessionSecret: env.SESSION_SECRET ?? '',
     owners: env.DASHBOARD_OWNERS ?? '',
     factoryRepo: env.FACTORY_REPO || 'codyalves/software-factory',
-    projects: projectList(env.TARGET_REPOS || env.TARGET_REPO || 'codyalves/factory-target-app'),
+    // Unset, the projects are the targets the factory is set up to build, so a
+    // new target shows up in the switcher without a dashboard setting.
+    projects: projectList(env.TARGET_REPOS || env.TARGET_REPO || targetRepos().join(',')),
   };
   const complete =
     config.appId && config.privateKey && config.clientId && config.clientSecret && config.owners;
