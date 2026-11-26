@@ -1009,3 +1009,253 @@ details.all-events > summary {
   gap: 0.5rem 1rem;
   margin-top: 0.75rem;
 }
+
+/* ------------------------------------------------------------- home: ask on the left, watch on the right */
+
+.home-head {
+  margin-bottom: 1.25rem;
+}
+
+.home-head .lede {
+  margin-top: 0.15rem;
+}
+
+.home {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 1.25rem;
+  align-items: start;
+}
+
+.home-ask {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 1.25rem;
+}
+
+.pane {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.pane textarea,
+.pane input:not([type='number'], [type='checkbox'], [type='hidden']) {
+  width: 100%;
+}
+
+.home-session {
+  position: sticky;
+  top: 1.25rem;
+}
+
+.pane {
+  padding: 1.1rem 1.25rem 1.25rem;
+  background: var(--sheet);
+  border: 1px solid var(--rule);
+  border-radius: 10px;
+}
+
+.home section + section {
+  margin-top: 0;
+}
+
+.pane > h2,
+.pane-head h2 {
+  margin: 0 0 0.75rem;
+  font-size: 1.05rem;
+}
+
+.pane-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 1rem;
+  font-size: 0.9rem;
+}
+
+.pane p {
+  margin: 0 0 0.75rem;
+}
+
+.pane .button,
+.pane textarea,
+.pane input {
+  border-radius: 6px;
+}
+
+.pane .form,
+.pane .plan {
+  max-width: none;
+}
+
+.button-soft {
+  color: var(--pen);
+  background: transparent;
+}
+
+.queue {
+  margin: 0;
+  padding-left: 1.4rem;
+  display: grid;
+  gap: 0.4rem;
+}
+
+.queue-waiting {
+  color: var(--ink-soft);
+}
+
+.session-now {
+  display: grid;
+  gap: 0.6rem;
+  padding-bottom: 1rem;
+  margin-bottom: 0.25rem;
+}
+
+.session-start {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.6rem 0.9rem;
+}
+
+.session-start details {
+  flex-basis: 100%;
+  font-size: 0.9rem;
+  color: var(--ink-soft);
+}
+
+.session-start details[open] {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+}
+
+.session-start summary {
+  cursor: pointer;
+  flex-basis: 100%;
+}
+
+.works {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  border-top: 1px solid var(--rule);
+}
+
+.work {
+  display: grid;
+  grid-template-columns: 0.7rem minmax(0, 1fr) auto;
+  gap: 0.7rem;
+  align-items: start;
+  padding: 0.7rem 0;
+  border-bottom: 1px solid var(--rule);
+}
+
+.work-dot {
+  width: 0.6rem;
+  height: 0.6rem;
+  margin-top: 0.45rem;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+.work-body {
+  display: grid;
+  gap: 0.15rem;
+}
+
+.work-title {
+  color: var(--ink);
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.work-title:hover {
+  text-decoration: underline;
+}
+
+.work-state {
+  font-size: 0.9rem;
+}
+
+.tone-now {
+  color: var(--pen);
+}
+
+.tone-ok {
+  color: var(--pass);
+}
+
+.tone-wait {
+  color: var(--amber);
+}
+
+.tone-stop {
+  color: var(--fail);
+}
+
+.tone-quiet {
+  color: var(--ink-soft);
+}
+
+.stages {
+  list-style: none;
+  margin: 0.35rem 0 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem;
+  font-size: 0.8rem;
+}
+
+.stages li {
+  padding: 0.1rem 0.55rem;
+  border: 1px solid var(--rule);
+  border-radius: 999px;
+  color: var(--ink-soft);
+}
+
+.stages li.done {
+  color: var(--pass);
+  border-color: currentColor;
+}
+
+.stages li.on {
+  color: var(--sheet);
+  background: var(--pen);
+  border-color: var(--pen);
+  font-weight: 600;
+}
+
+.works-earlier {
+  margin: 1.25rem 0 0.5rem;
+  font-size: 0.9rem;
+  color: var(--ink-soft);
+}
+
+@media (max-width: 64rem) {
+  .home {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .home-session {
+    position: static;
+    order: -1;
+  }
+}
+
+.unread {
+  margin-bottom: 0.75rem;
+  color: var(--fail);
+}
+
+.unread summary {
+  cursor: pointer;
+}
+
+.unread .mono {
+  display: block;
+  margin-top: 0.4rem;
+  font-size: 0.8rem;
+  color: var(--ink-soft);
+}

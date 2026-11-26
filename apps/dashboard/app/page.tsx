@@ -1,94 +1,373 @@
 import Link from 'next/link';
 import { LiveRefresh } from '@/components/live-refresh';
-import { StateStamp } from '@/components/stamps';
-import { activeSessions, controlConfig, currentLogin, currentOwner, currentProject } from '@/lib/control';
-import { reports } from '@/lib/data';
-import { utc } from '@/lib/format';
+import { backlogView, type LatestRun } from '@/lib/backlog-view';
+import {
+  controlConfig,
+  currentLogin,
+  currentOwner,
+  currentProject,
+  openTargetIssues,
+  readSite,
+  recentSessions,
+  sessionSteps,
+} from '@/lib/control';
+import { factoryStatus, reports } from '@/lib/data';
+import { issueUrl, usd, utc } from '@/lib/format';
+import { elapsed, plainState, STAGES, stageOf } from '@/lib/home-view';
 import { plannerAvailable } from '@/lib/planner';
 import { projectName } from '@/lib/projects';
+import { read } from '@/lib/read';
+import { type StatusRun, sessionProject, splitSessions, statusView } from '@/lib/status-view';
+import { targetSite } from '@/lib/targets';
+import { approveRunAction, setProjectAction, startSessionAction, stopSessionAction } from './actions';
 import { PlanWorkspace } from './plan-workspace';
 
-const MOVING = new Set(['Intake', 'Triage', 'Planning', 'Implementing', 'Gating', 'Merging']);
+type Search = {
+  searchParams: Promise<{ planned?: string; started?: string; stopped?: string; approved?: string }>;
+};
 
-/** The workspace: say what the site should do next, review the plan, file it, watch it build. */
-export default async function WorkspacePage() {
+const DEPLOY_WORDS = {
+  success: 'the latest change is live',
+  failure: 'the latest deploy failed',
+  pending: 'the latest change is deploying',
+  none: 'no deploy reported',
+} as const;
+
+/** One piece of work in the session pane: what it is, where it is, and anything to do about it. */
+function Work({ run, note, children }: { run: StatusRun; note?: string; children?: React.ReactNode }) {
+  const plain = plainState(run.state);
+  const stage = stageOf(run.state);
+  return (
+    <li className="work">
+      <span className={`work-dot tone-${plain.tone}`} aria-hidden="true" />
+      <div className="work-body">
+        <Link href={`/runs/${run.id}`} className="work-title">
+          #{run.issueNumber} {run.title}
+        </Link>
+        <span className={`work-state tone-${plain.tone}`}>
+          {plain.words}
+          {stage !== null && run.implementAttempts > 1 ? `, attempt ${run.implementAttempts}` : ''}
+          {note ? <span className="muted"> {note}</span> : null}
+        </span>
+        {stage !== null ? (
+          <ol className="stages" aria-label="Progress">
+            {STAGES.map((name, i) => (
+              <li
+                key={name}
+                className={i < stage ? 'done' : i === stage ? 'on' : undefined}
+                aria-current={i === stage ? 'step' : undefined}
+              >
+                {name}
+              </li>
+            ))}
+          </ol>
+        ) : null}
+      </div>
+      {children}
+    </li>
+  );
+}
+
+/** A GitHub read that failed: said plainly, with GitHub's own words one click away. */
+function Unread({ what, error }: { what: string; error: string | undefined }) {
+  return (
+    <details className="unread">
+      <summary>Could not read {what} from GitHub.</summary>
+      <span className="mono">{error ?? 'unknown error'}</span>
+    </details>
+  );
+}
+
+/**
+ * Home: choose a project (the rail), say what it should do next, start a
+ * session, and watch it. The left pane is asking; the right pane is the
+ * session, always in view. Everything here is also on the fuller pages
+ * (backlog, status, runs); this is the path through them.
+ */
+export default async function HomePage({ searchParams }: Search) {
+  const notice = await searchParams;
   const config = controlConfig();
-  const [owner, login] = await Promise.all([currentOwner(), currentLogin()]);
-  const repo = config ? await currentProject(config) : null;
-  const [runs, sessions] = await Promise.all([
+  const [owner, login, status, allRuns] = await Promise.all([
+    currentOwner(),
+    currentLogin(),
+    factoryStatus(),
     reports().listRuns({ limit: 200 }),
-    config && owner ? activeSessions(config).catch(() => []) : Promise.resolve([]),
   ]);
-  const recent = runs.filter((r) => r.repo === repo).slice(0, 8);
-  const moving = sessions.length > 0 || recent.some((r) => MOVING.has(r.state));
+  const repo = config ? await currentProject(config) : null;
+  const sessions = config ? await read(recentSessions(config).then(splitSessions)) : null;
+  const active = sessions?.ok ? sessions.value.active : null;
+  const last = sessions?.ok ? sessions.value.last : null;
+  const steps =
+    config && active?.status === 'in_progress'
+      ? await sessionSteps(config, active.id).catch(() => null)
+      : null;
+
+  // Sessions share one slot across projects. One running on another project
+  // is said plainly, with a way over to it, rather than shown as this one's.
+  const working = active ? sessionProject(steps?.names ?? [], allRuns, active.startedAt) : null;
+  const elsewhere = working && repo && working !== repo ? working : null;
+  const runs = repo ? allRuns.filter((r) => r.repo === repo) : allRuns;
+  const view = statusView(runs, elsewhere ? null : (active?.startedAt ?? null), {
+    sessionKnown: sessions?.ok === true,
+    outcomeLimit: 5,
+  });
+  const site = repo ? targetSite(repo) : null;
+
+  const [issues, github] = await Promise.all([
+    config && repo ? read(openTargetIssues(config, repo)) : Promise.resolve(null),
+    config && repo && site ? read(readSite(config, repo, site)) : Promise.resolve(null),
+  ]);
+  const latest = new Map<number, LatestRun>();
+  for (const r of runs) {
+    if (!latest.has(r.issueNumber)) {
+      latest.set(r.issueNumber, { id: r.id, state: r.state, pullRequestUrl: r.pullRequestUrl });
+    }
+  }
+  const backlog = issues?.ok ? backlogView(issues.value, latest) : null;
+  const ready = backlog ? backlog.next.length : 0;
+  const here = active && !elsewhere ? active : null;
+  const finished = view.session.filter((r) => r.state !== 'Reviewing');
+  const earlier = view.outcomes.filter((r) => r.state !== 'Reviewing');
+  const deploy = github?.ok ? github.value.commits[0]?.deploy : undefined;
+  const name = repo ? projectName(repo) : 'the site';
 
   return (
     <>
-      <header className="page-head">
-        <h1>{repo ? `What should ${projectName(repo)} do next?` : 'Workspace'}</h1>
-        <p className="lede">
-          Describe a feature in plain words. The planner splits it into small issues, each with criteria a
-          test can check. Edit the plan, file it, and the factory builds it in order.
-        </p>
+      <header className="page-head home-head">
+        <h1>{repo ? name : 'Software factory'}</h1>
+        {site?.production ? (
+          <p className="lede">
+            <a href={site.production.url}>{new URL(site.production.url).host}</a>
+            {deploy ? <span className="muted">: {DEPLOY_WORDS[deploy]}</span> : null}
+          </p>
+        ) : null}
+        <LiveRefresh active={active !== null || view.current.length > 0} everyMs={10_000} />
       </header>
 
-      {!config || !repo ? (
-        <div className="empty">
-          The control panel is not set up on this dashboard yet (see docs/dashboard.md).
-        </div>
-      ) : !owner ? (
-        <div className="empty">
-          {login ? (
-            <>Signed in as {login}, who is not an owner of this factory, so this account can only read. </>
-          ) : (
-            <>
-              <a href="/auth/login">Sign in with GitHub</a> as an owner to plan work.{' '}
-            </>
-          )}
-          Anyone can read the <Link href="/runs">runs</Link> and the <Link href="/backlog">backlog</Link>.
-        </div>
-      ) : !plannerAvailable() ? (
-        <div className="empty">
-          The planner needs <span className="mono">ANTHROPIC_API_KEY</span> on the dashboard. Until then,{' '}
-          <Link href="/requests/new">write one issue yourself</Link>.
-        </div>
-      ) : (
-        <PlanWorkspace repo={repo} />
-      )}
+      {notice.planned ? (
+        <p className="notice" role="status">
+          Added to the queue: {notice.planned.split(',').filter(Boolean).length} issue(s). Start a session to
+          build them.
+        </p>
+      ) : null}
+      {notice.started ? (
+        <p className="notice" role="status">
+          Session requested. GitHub starts it within a minute, and it shows on the right.
+        </p>
+      ) : null}
+      {notice.stopped ? (
+        <p className="notice" role="status">
+          Session stopped. Work it left unfinished runs again in the next session.
+        </p>
+      ) : null}
+      {notice.approved && /^\d+$/.test(notice.approved) ? (
+        <p className="notice" role="status">
+          Approval sent for #{notice.approved}. The factory records it and merges the change once its checks
+          pass.
+        </p>
+      ) : null}
 
-      {repo ? (
-        <section className="feed" aria-labelledby="feed">
-          <div className="feed-head">
-            <h2 id="feed">Building now</h2>
-            <LiveRefresh active={moving} everyMs={10_000} />
+      <div className="home">
+        <div className="home-ask">
+          <section className="pane" aria-labelledby="ask">
+            <h2 id="ask">What should {name} do next?</h2>
+            {!config || !repo ? (
+              <p className="muted">
+                The control panel is not set up on this dashboard, so it can show the record but not take
+                requests or start sessions (docs/dashboard.md).
+              </p>
+            ) : !owner ? (
+              <p className="muted">
+                {login ? (
+                  <>
+                    Signed in as {login}, who is not an owner of this factory, so this account can only read.
+                  </>
+                ) : (
+                  <>
+                    <a href="/auth/login">Sign in with GitHub</a> as an owner to ask for work and start
+                    sessions.
+                  </>
+                )}
+              </p>
+            ) : !plannerAvailable() ? (
+              <p className="muted">
+                Describing work in plain words needs <span className="mono">ANTHROPIC_API_KEY</span> on the
+                dashboard. Until then, <Link href="/requests/new">write one issue yourself</Link>.
+              </p>
+            ) : (
+              <PlanWorkspace repo={repo} />
+            )}
+          </section>
+
+          <section className="pane" aria-labelledby="queue">
+            <div className="pane-head">
+              <h2 id="queue">Queue</h2>
+              <span className="muted">
+                {backlog ? `${ready} ready` : ''}
+                {repo ? (
+                  <>
+                    {backlog ? ' · ' : ''}
+                    <Link href="/backlog">Details</Link>
+                  </>
+                ) : null}
+              </span>
+            </div>
+            {!config || !repo ? (
+              <p className="muted">The queue is read from GitHub, which needs the control panel.</p>
+            ) : !issues?.ok ? (
+              <Unread what="the queue" error={issues?.error} />
+            ) : !backlog || backlog.running.length + backlog.next.length + backlog.blocked.length === 0 ? (
+              <p className="muted">Nothing is queued. Describe something above to add work.</p>
+            ) : (
+              <ol className="queue">
+                {backlog.running.map((row) => (
+                  <li key={row.number}>
+                    <a href={issueUrl(repo, row.number)}>#{row.number}</a> {row.title}{' '}
+                    <span className="tone-now">building now</span>
+                  </li>
+                ))}
+                {backlog.next.map((row) => (
+                  <li key={row.number}>
+                    <a href={issueUrl(repo, row.number)}>#{row.number}</a> {row.title}
+                  </li>
+                ))}
+                {backlog.blocked.map((row) => (
+                  <li key={row.number} className="queue-waiting">
+                    <a href={issueUrl(repo, row.number)}>#{row.number}</a> {row.title}{' '}
+                    <span className="muted">waits on {row.on.map((n) => `#${n}`).join(', ')}</span>
+                  </li>
+                ))}
+              </ol>
+            )}
+          </section>
+        </div>
+
+        <section className="pane home-session" aria-labelledby="session">
+          <div className="pane-head">
+            <h2 id="session">Session</h2>
+            <span className="muted">
+              {usd(status.spentTodayUsd)} of {usd(status.dailyBudgetUsd)} today ·{' '}
+              <Link href="/status">Details</Link>
+            </span>
           </div>
-          {sessions.length > 0 ? (
-            <p className="notice">
-              A factory session is <a href={sessions[0]?.url}>{sessions[0]?.status.replace('_', ' ')}</a>.
-              Follow it on the <Link href="/status">status page</Link>; stop it from the{' '}
-              <Link href="/backlog">backlog</Link>.
-            </p>
-          ) : null}
-          {recent.length === 0 ? (
-            <div className="empty">
-              Nothing has been built on {repo} yet. File a plan, then start a session from the{' '}
-              <Link href="/backlog">backlog</Link>.
+
+          {!sessions ? (
+            <p className="muted">Sessions are read from GitHub, which needs the control panel.</p>
+          ) : !sessions.ok ? (
+            <Unread what="sessions" error={sessions.error} />
+          ) : elsewhere ? (
+            <form action={setProjectAction} className="session-now">
+              <p>
+                A session is running on <strong>{elsewhere}</strong>, so none can start here until it ends.
+              </p>
+              <input type="hidden" name="back" value="/" />
+              <button type="submit" name="project" value={elsewhere} className="button button-soft">
+                Switch to {projectName(elsewhere)}
+              </button>
+            </form>
+          ) : here ? (
+            <div className="session-now">
+              <p>
+                <strong className="tone-now">
+                  {here.status === 'in_progress'
+                    ? `Running for ${elapsed(here.startedAt, Date.now())}`
+                    : 'Queued'}
+                </strong>
+                {here.status === 'in_progress' && view.current.length === 0 ? (
+                  <span className="muted">
+                    {' '}
+                    Between issues: choosing the next one, or waiting on a deploy and testing the live site.
+                  </span>
+                ) : null}
+              </p>
+              {owner ? (
+                <form action={stopSessionAction}>
+                  <input type="hidden" name="runId" value={here.id} />
+                  <input type="hidden" name="from" value="home" />
+                  <button type="submit" className="button button-quiet">
+                    Stop session
+                  </button>
+                </form>
+              ) : null}
             </div>
           ) : (
-            <ol className="feed-list">
-              {recent.map((r) => (
-                <li key={r.id}>
-                  <StateStamp state={r.state} />
-                  <Link href={`/runs/${r.id}`}>
-                    #{r.issueNumber} {r.title}
-                  </Link>
-                  <span className="muted">{utc(r.updatedAt)}</span>
-                </li>
+            <div className="session-now">
+              <p className="muted">
+                Not running.{last ? ` The last session ended ${utc(last.updatedAt)}.` : ''}
+              </p>
+              {owner ? (
+                <form action={startSessionAction} className="session-start">
+                  <input type="hidden" name="from" value="home" />
+                  <button type="submit" className="button" disabled={ready === 0}>
+                    Start session
+                  </button>
+                  <span className="muted">
+                    {ready === 0 ? 'Nothing is ready to build.' : `Builds the ${ready} ready, in order.`}
+                  </span>
+                  <details>
+                    <summary>Limits</summary>
+                    <label className="field-inline">
+                      Issues, at most
+                      <input type="number" name="maxRuns" min={1} max={20} defaultValue={5} />
+                    </label>
+                    <label className="field-inline">
+                      Daily budget, USD
+                      <input
+                        type="number"
+                        name="dailyBudget"
+                        min={0.5}
+                        max={20}
+                        step={0.5}
+                        defaultValue={3}
+                      />
+                    </label>
+                  </details>
+                </form>
+              ) : null}
+            </div>
+          )}
+
+          {view.current.length + view.held.length + finished.length + view.unfinished.length > 0 ? (
+            <ol className="works">
+              {view.current.map((r) => (
+                <Work key={r.id} run={r} />
+              ))}
+              {view.held.map((r) => (
+                <Work key={r.id} run={r} note="It passed every check; the factory rated it high risk.">
+                  {owner ? (
+                    <form action={approveRunAction}>
+                      <input type="hidden" name="runId" value={r.id} />
+                      <input type="hidden" name="from" value="home" />
+                      <button type="submit" className="button button-soft">
+                        Approve
+                      </button>
+                    </form>
+                  ) : null}
+                </Work>
+              ))}
+              {finished.map((r) => (
+                <Work key={r.id} run={r} />
+              ))}
+              {view.unfinished.map((r) => (
+                <Work key={r.id} run={r} note="Left unfinished; the next session runs it again." />
               ))}
             </ol>
-          )}
+          ) : null}
+
+          {earlier.length > 0 ? (
+            <>
+              <h3 className="works-earlier">{here ? 'Before this session' : 'Latest results'}</h3>
+              <ol className="works">
+                {earlier.map((r) => (
+                  <Work key={r.id} run={r} note={utc(r.updatedAt)} />
+                ))}
+              </ol>
+            </>
+          ) : view.current.length + view.held.length + finished.length + view.unfinished.length === 0 ? (
+            <p className="muted">Nothing has been built{repo ? ` on ${name}` : ''} yet.</p>
+          ) : null}
         </section>
-      ) : null}
+      </div>
     </>
   );
 }

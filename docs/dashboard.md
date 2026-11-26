@@ -7,7 +7,8 @@ pauses or spends.
 
 | Page | Shows |
 | --- | --- |
-| Status | What is happening now, on the project the running session is working on: the session with what it has shipped and how much backlog is left, the run in progress with its latest checks and events, what the session has finished, runs an earlier session left unfinished, and the target itself (open pull requests with their checks, the latest commits on its base branch, and whether each reached production) |
+| Home | The path through the factory on one screen, for the project chosen in the rail. Left: say what the site should do next (the planner drafts issues to review and file) and the queue in the order the factory will take it. Right: the session, always in view: start or stop it, each issue's progress in plain words (read, plan, write code, check, merge), work waiting for approval with its Approve button, and the latest results |
+| Status (from Home, "Details") | What is happening now, on the project the running session is working on: the session with what it has shipped and how much backlog is left, the run in progress with its latest checks and events, what the session has finished, runs an earlier session left unfinished, and the target itself (open pull requests with their checks, the latest commits on its base branch, and whether each reached production) |
 | Runs | Every issue picked up: state, risk, attempts, spend, pull request |
 | Run record | One run in order: triage answers and how confident each was, the numbered acceptance criteria, every attempt with its check results and output, measured risk, the criterion-to-test trace, cost by model, and the run's events in the audit chain |
 | Traceability | Every requirement, criterion by criterion, with the tests that prove it and the commit they ran on |
@@ -92,7 +93,7 @@ How it stays safe:
   form also asks triage's own spec question, with triage's prompt and model
   (a fraction of a cent). The owner can tick "File anyway"; triage still
   decides.
-- **The planner drafts; the owner files.** The workspace (`/`) takes a feature
+- **The planner drafts; the owner files.** The home screen (`/`) takes a feature
   in plain words and asks Claude (`prompts/plan.v1.md`, `PLANNER_MODEL`,
   default Sonnet) to split it into up to 8 small issues, reading the target's
   CLAUDE.md and open issues. The plan is only a draft on screen: the owner

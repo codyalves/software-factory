@@ -15,6 +15,7 @@ import {
 } from '@/lib/control';
 import { factoryStatus, reports } from '@/lib/data';
 import { shortSha, usd, utc } from '@/lib/format';
+import { read } from '@/lib/read';
 import {
   type CheckState,
   type StatusRun,
@@ -44,17 +45,6 @@ const DEPLOY_WORDS: Readonly<Record<CheckState, string>> = {
 /** How many runs get their latest events shown; each costs a full read of its record. */
 const DETAILED_RUNS = 3;
 const EVENTS_PER_RUN = 5;
-
-type Read<T> = { ok: true; value: T } | { ok: false; error: string };
-
-/** A GitHub read that may fail without taking the rest of the page with it. */
-async function read<T>(promise: Promise<T>): Promise<Read<T>> {
-  try {
-    return { ok: true, value: await promise };
-  } catch (error) {
-    return { ok: false, error: error instanceof Error ? error.message : 'unknown error' };
-  }
-}
 
 function Check({ state, words }: { state: CheckState; words: Readonly<Record<CheckState, string>> }) {
   const tone = state === 'success' ? 'pass' : state === 'failure' ? 'fail' : 'muted';
