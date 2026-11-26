@@ -1,10 +1,9 @@
 import Link from 'next/link';
-import { setProjectAction } from '@/app/actions';
 import { controlConfig, currentLogin, currentProject } from '@/lib/control';
 import { factoryStatus, reports } from '@/lib/data';
 import { usd } from '@/lib/format';
-import { projectName } from '@/lib/projects';
 import { Nav } from './nav';
+import { ProjectSwitcher } from './project-switcher';
 
 /** The left rail: where you are, and the factory's state right now. */
 export async function Rail() {
@@ -22,17 +21,7 @@ export async function Rail() {
         Software factory
         <span>Run records</span>
       </Link>
-      {config && project && config.projects.length > 1 ? (
-        <form action={setProjectAction} className="rail-projects" aria-label="Project">
-          <input type="hidden" name="back" value="/" />
-          <span className="rail-projects-label">Project</span>
-          {config.projects.map((p) => (
-            <button key={p} type="submit" name="project" value={p} aria-pressed={p === project} title={p}>
-              {projectName(p)}
-            </button>
-          ))}
-        </form>
-      ) : null}
+      {config && project ? <ProjectSwitcher projects={config.projects} current={project} /> : null}
       <Nav />
       <dl className="rail-status">
         <div>

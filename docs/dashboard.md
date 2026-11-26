@@ -100,8 +100,11 @@ How it stays safe:
   Each issue then passes the request form's own rules and is filed in order,
   later ones saying "Depends on" the numbers earlier ones got. A plan costs a
   few cents, shown with the draft, and is outside the factory's daily budget.
-- **Projects.** `TARGET_REPOS` lists the sites (the first is the default).
-  The switcher only changes what the workspace shows and where work is filed;
+- **Projects.** The rail names the current project on every page and, with
+  more than one, switches between them without leaving the page. The projects
+  are the targets in `gates/targets.json`, in its order (the first is the
+  default); `TARGET_REPOS` overrides the list or its order.
+  The switcher only changes what the pages show and where work is filed;
   filing a plan checks it was drafted for the current project.
 - **Requests cannot forge the factory's markers.** HTML comments are refused,
   and the description must be prose, so the acceptance criteria are exactly
@@ -131,7 +134,7 @@ How it stays safe:
    | `SESSION_SECRET` | 32 or more random characters, used only to sign sessions |
    | `DASHBOARD_OWNERS` | GitHub logins that may act, comma-separated |
    | `FACTORY_REPO` | Optional; defaults to `codyalves/software-factory` |
-   | `TARGET_REPOS` | The sites, comma separated, default first: `codyalves/brewery,codyalves/factory-target-app` (`TARGET_REPO` still works for one) |
+   | `TARGET_REPOS` | Optional; defaults to the targets in `gates/targets.json`. The sites, comma separated, default first: `codyalves/brewery,codyalves/factory-target-app` (`TARGET_REPO` still works for one) |
    | `ANTHROPIC_API_KEY` | Turns on the planner and triage's spec check in the request form. A key with a low spend limit is plenty. |
 
 ## Design
