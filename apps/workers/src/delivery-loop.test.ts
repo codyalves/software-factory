@@ -9,11 +9,14 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import {
   applyNextGateResult,
   applyNextImplementation,
+  applyNextMergeResult,
+  approveHeldRun,
   startNextImplementation,
 } from '../../orchestrator/src/delivery.ts';
 import { deliverNextOutbox } from '../../orchestrator/src/outbox.ts';
 import { driveRun, renderRunReport } from './drive.ts';
 import type { TargetConfig } from './gates.ts';
+import { createMergeHandler } from './handlers/merge.ts';
 import { createHandlers } from './handlers.ts';
 import type { Implementer, ImplementInput } from './implementer.ts';
 import { executeStep } from './step-runner.ts';
@@ -394,6 +397,83 @@ describe.skipIf(!TEST_DATABASE_URL)('implement-and-gate loop', () => {
     expect(await t.db.selectFrom('step').select('kind').where('kind', '=', 'implement').execute()).toEqual(
       [],
     );
+  });
+
+  it('ships held work once the owner approves it, and records who approved', async () => {
+    await using t = await createTestDatabase();
+    const touchesMigration: Script = async (input) => {
+      await addTracedTest(input);
+      await mkdir(join(input.dir, 'migrations'));
+      await writeFile(join(input.dir, 'migrations', '001_year.sql'), 'select 1;\n');
+    };
+    const { runs, queue, runId, attempt } = await setup(t, scripted([touchesMigration]));
+    await startNextImplementation(runs);
+    expect(await attempt()).toMatch(/moved to Reviewing/);
+
+    expect(await approveHeldRun(runs, runId, 'codyalves')).toMatch(/moved to Merging/);
+    // A second click, or a second workflow, finds nothing left to approve.
+    expect(await approveHeldRun(runs, runId, 'codyalves')).toBeNull();
+
+    const head = `factory/7-${runId.slice(0, 8)}`;
+    const events = await new AuditStore(t.db).readAll();
+    const approved = events.find((e) => e.type === 'delivery.approved');
+    expect(JSON.parse(approved?.payload ?? '{}')).toEqual({ approver: 'codyalves' });
+    const states = events.filter((e) => e.type === 'run.state_changed').map((e) => JSON.parse(e.payload));
+    expect(states.at(-1)).toMatchObject({
+      from: 'Reviewing',
+      to: 'Merging',
+      reason: 'approved by codyalves',
+    });
+    const merge = await t.db
+      .selectFrom('outbox')
+      .select('payload')
+      .where('kind', '=', 'pull_request.merge')
+      .execute();
+    expect(merge.map((m) => m.payload)).toEqual([{ repo: REPO, head }]);
+
+    // From here it ships like any other run: the merge step watches GitHub.
+    const mergeSha = 'b2f60758e95e0000000000000000000000000000';
+    const handlers = {
+      merge: createMergeHandler({
+        forge: {
+          pullRequestStatus: async () => ({
+            number: 12,
+            url: 'https://github.com/codyalves/target/pull/12',
+            state: 'merged' as const,
+            mergeSha,
+            checks: 'success' as const,
+            failingChecks: [],
+          }),
+        },
+      }),
+    };
+    const step = await queue.claim('worker-1', ['merge'], 120_000);
+    if (!step) throw new Error('no merge step queued');
+    expect(step.payload).toEqual({ repo: REPO, head });
+    await executeStep(step, {
+      queue,
+      worker: 'worker-1',
+      handlers,
+      leaseMs: 120_000,
+      idleDelayMs: 10,
+      signal: new AbortController().signal,
+      log: silent,
+    });
+    expect(await applyNextMergeResult(runs)).toMatch(/moved to Merged/);
+    expect((await runs.get(runId))?.state).toBe('Merged');
+  });
+
+  it('does not approve a run that is not held', async () => {
+    await using t = await createTestDatabase();
+    const { runs, runId, attempt } = await setup(t, scripted([addTracedTest]));
+    await startNextImplementation(runs);
+    // Medium risk: the factory is already merging it.
+    expect(await attempt()).toMatch(/moved to Merging/);
+
+    expect(await approveHeldRun(runs, runId, 'codyalves')).toBeNull();
+    const events = await new AuditStore(t.db).readAll();
+    expect(events.some((e) => e.type === 'delivery.approved')).toBe(false);
+    expect(await t.db.selectFrom('step').select('id').where('kind', '=', 'merge').execute()).toHaveLength(1);
   });
 
   it('drives a run to a pull request queued to merge in one process, and reports it from the audit log', async () => {

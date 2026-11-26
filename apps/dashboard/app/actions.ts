@@ -5,6 +5,7 @@ import { cookies } from 'next/headers';
 import { redirect } from 'next/navigation';
 import {
   activeSessions,
+  approveHeldRun,
   controlConfig,
   currentOwner,
   currentProject,
@@ -14,6 +15,7 @@ import {
   startBacklogSession,
   stopSession,
 } from '@/lib/control';
+import { reports } from '@/lib/data';
 import { checkPlan, dependsOnFor, fileable, type Plan, type PlannedDraftCheck, parsePlan } from '@/lib/plan';
 import { draftPlan } from '@/lib/planner';
 import { PROJECT_COOKIE } from '@/lib/projects';
@@ -105,6 +107,24 @@ export async function stopSessionAction(form: FormData): Promise<void> {
   await stopSession(config, runId);
   revalidatePath('/backlog');
   redirect('/backlog?stopped=1');
+}
+
+const RUN_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+
+/**
+ * Approves a run that was held for the owner. The record must say it is held
+ * (so a stale page cannot approve something else), and the approval itself is
+ * recorded by the factory, with this owner's login, when the workflow runs.
+ */
+export async function approveRunAction(form: FormData): Promise<void> {
+  const { config, login } = await owner();
+  const runId = String(form.get('runId') ?? '');
+  if (!RUN_ID.test(runId)) throw new Error('That is not a run.');
+  const run = await reports().runReport(runId);
+  if (run?.state !== 'Reviewing') throw new Error('That run is not held for review.');
+  await approveHeldRun(config, { runId, requestedBy: login });
+  revalidatePath('/status');
+  redirect(`/status?approved=${run.issueNumber}`);
 }
 
 /** Switching projects only changes what the workspace shows, so anyone may do it. */

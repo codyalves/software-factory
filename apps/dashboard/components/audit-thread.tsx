@@ -56,6 +56,8 @@ export function describe(event: ThreadEvent): { what: string; detail: string } {
             : 'Held for the owner’s review',
         detail: field(p, 'reason'),
       };
+    case 'delivery.approved':
+      return { what: `Approved by ${field(p, 'approver')}`, detail: 'the owner released held work' };
     case 'delivery.merged':
       return { what: 'Merged after the target’s checks passed', detail: field(p, 'mergeSha').slice(0, 12) };
     case 'delivery.failed':

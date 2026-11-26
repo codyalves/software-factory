@@ -37,7 +37,8 @@ Three deployables and three stores.
 - Gating or Reviewing can return to Implementing with the failure as input, up
   to 4 implement attempts.
 - Passing work goes straight to Merging when its risk is low or medium, and to
-  Reviewing, held for the owner, when it is high (ADR 0007). In Merging, GitHub
+  Reviewing, held for the owner, when it is high (ADR 0007). The owner's
+  approval on the dashboard moves it to Merging (ADR 0008). In Merging, GitHub
   merges once the target's required checks pass; a failed check escalates.
 - Any active run can go to Escalated (budget, attempts, low confidence) or
   Cancelled. Triage can Reject.

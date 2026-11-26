@@ -133,7 +133,10 @@ export interface Session {
   readonly startedAt: string;
 }
 
-/** Factory sessions queued or running now. factory-run and factory-backlog share one slot. */
+/** The workflows that share the factory's one slot: sessions, single runs and approvals. */
+const FACTORY_WORKFLOWS: readonly string[] = ['factory-backlog', 'factory-run', 'factory-approve'];
+
+/** Factory sessions queued or running now. They share one slot. */
 export async function activeSessions(config: ControlConfig): Promise<Session[]> {
   const request = await appRequest(config, config.factoryRepo);
   const found: Session[] = [];
@@ -142,7 +145,7 @@ export async function activeSessions(config: ControlConfig): Promise<Session[]> 
       workflow_runs: { id: number; name: string; status: string; html_url: string; run_started_at: string }[];
     }>(request, 'GET', `/repos/${config.factoryRepo}/actions/runs?status=${status}&per_page=20`);
     for (const r of runs) {
-      if (r.name === 'factory-backlog' || r.name === 'factory-run') {
+      if (FACTORY_WORKFLOWS.includes(r.name)) {
         found.push({
           id: r.id,
           workflow: r.name,
@@ -171,7 +174,7 @@ export async function recentSessions(config: ControlConfig): Promise<SessionReco
     }[];
   }>(request, 'GET', `/repos/${config.factoryRepo}/actions/runs?per_page=100`);
   return runs
-    .filter((r) => r.name === 'factory-backlog' || r.name === 'factory-run')
+    .filter((r) => FACTORY_WORKFLOWS.includes(r.name))
     .map((r) => ({
       id: r.id,
       workflow: r.name,
@@ -272,6 +275,24 @@ export async function startBacklogSession(
         requested_by: input.requestedBy,
       },
     },
+  );
+}
+
+/**
+ * Approves a run held for the owner. Like every action it goes through
+ * GitHub: the factory-approve workflow records the approval in the audit log
+ * and ships the run, so the dashboard still writes nothing to the database.
+ */
+export async function approveHeldRun(
+  config: ControlConfig,
+  input: { runId: string; requestedBy: string },
+): Promise<void> {
+  const request = await appRequest(config, config.factoryRepo);
+  await githubRequest(
+    request,
+    'POST',
+    `/repos/${config.factoryRepo}/actions/workflows/factory-approve.yml/dispatches`,
+    { ref: 'main', inputs: { run_id: input.runId, requested_by: input.requestedBy } },
   );
 }
 

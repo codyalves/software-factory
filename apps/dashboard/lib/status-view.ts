@@ -16,6 +16,8 @@ export interface StatusRun {
 export interface StatusView {
   /** Being worked on by the session that is running now. */
   readonly current: readonly StatusRun[];
+  /** Passed every check and held for the owner's approval, oldest first: the order they would ship in. */
+  readonly held: readonly StatusRun[];
   /** Finished or held since the running session started, most recently changed first. */
   readonly session: readonly StatusRun[];
   /** Started and not finished, with no session working on them: a session ended or was stopped first. */
@@ -57,6 +59,9 @@ export function statusView(
     .sort((a, b) => Date.parse(b.updatedAt) - Date.parse(a.updatedAt));
   return {
     current: active.filter((r) => !sessionKnown || inSession(r)),
+    held: latest
+      .filter((r) => r.state === 'Reviewing')
+      .sort((a, b) => Date.parse(a.updatedAt) - Date.parse(b.updatedAt)),
     session: done.filter(inSession),
     unfinished: active.filter((r) => sessionKnown && !inSession(r)),
     outcomes: done.filter((r) => !inSession(r)).slice(0, outcomeLimit),
