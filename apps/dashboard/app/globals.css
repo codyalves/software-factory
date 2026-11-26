@@ -1043,9 +1043,33 @@ details.all-events > summary {
   width: 100%;
 }
 
-.home-session {
+.home-watch {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 1.25rem;
   position: sticky;
   top: 1.25rem;
+}
+
+.pane-attention {
+  border-color: var(--amber);
+}
+
+.pane-attention .works {
+  margin-top: 0.25rem;
+}
+
+.pane-attention .work {
+  align-items: center;
+}
+
+.pane-attention .work:last-child {
+  border-bottom: 0;
+  padding-bottom: 0;
+}
+
+.button[aria-busy='true'] {
+  cursor: progress;
 }
 
 .pane {
@@ -1238,7 +1262,7 @@ details.all-events > summary {
     grid-template-columns: minmax(0, 1fr);
   }
 
-  .home-session {
+  .home-watch {
     position: static;
     order: -1;
   }

@@ -1,5 +1,6 @@
 import Link from 'next/link';
 import { LiveRefresh } from '@/components/live-refresh';
+import { SubmitButton } from '@/components/submit-button';
 import { backlogView, type LatestRun } from '@/lib/backlog-view';
 import {
   controlConfig,
@@ -17,7 +18,13 @@ import { elapsed, plainState, STAGES, stageOf } from '@/lib/home-view';
 import { plannerAvailable } from '@/lib/planner';
 import { projectName } from '@/lib/projects';
 import { read } from '@/lib/read';
-import { type StatusRun, sessionProject, splitSessions, statusView } from '@/lib/status-view';
+import {
+  approvalInProgress,
+  type StatusRun,
+  sessionProject,
+  splitSessions,
+  statusView,
+} from '@/lib/status-view';
 import { targetSite } from '@/lib/targets';
 import { approveRunAction, setProjectAction, startSessionAction, stopSessionAction } from './actions';
 import { PlanWorkspace } from './plan-workspace';
@@ -130,6 +137,15 @@ export default async function HomePage({ searchParams }: Search) {
   const earlier = view.outcomes.filter((r) => r.state !== 'Reviewing');
   const deploy = github?.ok ? github.value.commits[0]?.deploy : undefined;
   const name = repo ? projectName(repo) : 'the site';
+  // An approval runs in the same slot as a session, but it is not one: it
+  // ships one held change, so it is shown on that change, not as a session.
+  const approving = here?.workflow === 'factory-approve';
+  const approvingId = approving ? approvalInProgress(steps?.names ?? []) : null;
+  const heldNumbers = new Set(view.held.map((r) => r.issueNumber));
+  const waitingOn = (issueNumber: number) =>
+    (backlog?.blocked ?? []).filter((b) => b.on.includes(issueNumber)).map((b) => b.number);
+  const openPulls = github?.ok ? new Set(github.value.pulls.map((pull) => pull.url)) : null;
+  const shown = view.current.length + finished.length + view.unfinished.length;
 
   return (
     <>
@@ -234,7 +250,10 @@ export default async function HomePage({ searchParams }: Search) {
                 {backlog.blocked.map((row) => (
                   <li key={row.number} className="queue-waiting">
                     <a href={issueUrl(repo, row.number)}>#{row.number}</a> {row.title}{' '}
-                    <span className="muted">waits on {row.on.map((n) => `#${n}`).join(', ')}</span>
+                    <span className="muted">
+                      waits on {row.on.map((n) => `#${n}`).join(', ')}
+                      {row.on.some((n) => heldNumbers.has(n)) ? ', which needs your approval' : ''}
+                    </span>
                   </li>
                 ))}
               </ol>
@@ -242,131 +261,198 @@ export default async function HomePage({ searchParams }: Search) {
           </section>
         </div>
 
-        <section className="pane home-session" aria-labelledby="session">
-          <div className="pane-head">
-            <h2 id="session">Session</h2>
-            <span className="muted">
-              {usd(status.spentTodayUsd)} of {usd(status.dailyBudgetUsd)} today ·{' '}
-              <Link href="/status">Details</Link>
-            </span>
-          </div>
-
-          {!sessions ? (
-            <p className="muted">Sessions are read from GitHub, which needs the control panel.</p>
-          ) : !sessions.ok ? (
-            <Unread what="sessions" error={sessions.error} />
-          ) : elsewhere ? (
-            <form action={setProjectAction} className="session-now">
-              <p>
-                A session is running on <strong>{elsewhere}</strong>, so none can start here until it ends.
+        <div className="home-watch">
+          {view.held.length > 0 ? (
+            <section className="pane pane-attention" aria-labelledby="approvals">
+              <div className="pane-head">
+                <h2 id="approvals">Needs your approval</h2>
+                <span className="muted">{view.held.length} waiting</span>
+              </div>
+              <p className="muted">
+                The factory finished these and every check passed, but it rated them high risk, so it will not
+                ship them without you. Approving ships the change; nothing needs doing on GitHub.
               </p>
-              <input type="hidden" name="back" value="/" />
-              <button type="submit" name="project" value={elsewhere} className="button button-soft">
-                Switch to {projectName(elsewhere)}
-              </button>
-            </form>
-          ) : here ? (
-            <div className="session-now">
-              <p>
-                <strong className="tone-now">
-                  {here.status === 'in_progress'
-                    ? `Running for ${elapsed(here.startedAt, Date.now())}`
-                    : 'Queued'}
-                </strong>
-                {here.status === 'in_progress' && view.current.length === 0 ? (
+              <ol className="works">
+                {view.held.map((r) => {
+                  const blocks = waitingOn(r.issueNumber);
+                  const closed =
+                    openPulls !== null && r.pullRequestUrl !== null && !openPulls.has(r.pullRequestUrl);
+                  const underway = approvingId === r.id;
+                  return (
+                    <li key={r.id} className="work">
+                      <span className="work-dot tone-wait" aria-hidden="true" />
+                      <div className="work-body">
+                        <Link href={`/runs/${r.id}`} className="work-title">
+                          #{r.issueNumber} {r.title}
+                        </Link>
+                        <span className="work-state">
+                          {underway ? (
+                            <span className="tone-now">Approved: merging once its checks pass.</span>
+                          ) : closed ? (
+                            <span className="muted">
+                              Its pull request is no longer open on GitHub. Approving updates the record to
+                              match.
+                            </span>
+                          ) : (
+                            <span className="muted">Ready to ship when you approve.</span>
+                          )}
+                          {blocks.length > 0 ? (
+                            <span className="tone-wait">
+                              {' '}
+                              Holding up {blocks.map((n) => `#${n}`).join(', ')}.
+                            </span>
+                          ) : null}{' '}
+                          <Link href={`/runs/${r.id}`}>Why it was held</Link>
+                        </span>
+                      </div>
+                      {owner && !underway ? (
+                        <form action={approveRunAction}>
+                          <input type="hidden" name="runId" value={r.id} />
+                          <input type="hidden" name="from" value="home" />
+                          <SubmitButton pending="Approving…" className="button button-soft">
+                            {closed ? 'Update record' : 'Approve and ship'}
+                          </SubmitButton>
+                        </form>
+                      ) : null}
+                    </li>
+                  );
+                })}
+              </ol>
+              {!owner ? <p className="muted">Sign in as an owner to approve.</p> : null}
+            </section>
+          ) : null}
+
+          <section className="pane home-session" aria-labelledby="session">
+            <div className="pane-head">
+              <h2 id="session">Session</h2>
+              <span className="muted">
+                {usd(status.spentTodayUsd)} of {usd(status.dailyBudgetUsd)} today ·{' '}
+                <Link href="/status">Details</Link>
+              </span>
+            </div>
+
+            {!sessions ? (
+              <p className="muted">Sessions are read from GitHub, which needs the control panel.</p>
+            ) : !sessions.ok ? (
+              <Unread what="sessions" error={sessions.error} />
+            ) : elsewhere ? (
+              <form action={setProjectAction} className="session-now">
+                <p>
+                  A session is running on <strong>{elsewhere}</strong>, so none can start here until it ends.
+                </p>
+                <input type="hidden" name="back" value="/" />
+                <button type="submit" name="project" value={elsewhere} className="button button-soft">
+                  Switch to {projectName(elsewhere)}
+                </button>
+              </form>
+            ) : here && approving ? (
+              <div className="session-now">
+                <p>
+                  <strong className="tone-now">
+                    {here.status === 'in_progress' ? 'Shipping an approved change' : 'Approval queued'}
+                  </strong>
                   <span className="muted">
                     {' '}
-                    Between issues: choosing the next one, or waiting on a deploy and testing the live site.
+                    {here.status === 'in_progress'
+                      ? 'This takes a minute or two. A session can start when it is done.'
+                      : 'GitHub starts it within a minute.'}
                   </span>
-                ) : null}
-              </p>
-              {owner ? (
-                <form action={stopSessionAction}>
-                  <input type="hidden" name="runId" value={here.id} />
-                  <input type="hidden" name="from" value="home" />
-                  <button type="submit" className="button button-quiet">
-                    Stop session
-                  </button>
-                </form>
-              ) : null}
-            </div>
-          ) : (
-            <div className="session-now">
-              <p className="muted">
-                Not running.{last ? ` The last session ended ${utc(last.updatedAt)}.` : ''}
-              </p>
-              {owner ? (
-                <form action={startSessionAction} className="session-start">
-                  <input type="hidden" name="from" value="home" />
-                  <button type="submit" className="button" disabled={ready === 0}>
-                    Start session
-                  </button>
-                  <span className="muted">
-                    {ready === 0 ? 'Nothing is ready to build.' : `Builds the ${ready} ready, in order.`}
-                  </span>
-                  <details>
-                    <summary>Limits</summary>
-                    <label className="field-inline">
-                      Issues, at most
-                      <input type="number" name="maxRuns" min={1} max={20} defaultValue={5} />
-                    </label>
-                    <label className="field-inline">
-                      Daily budget, USD
-                      <input
-                        type="number"
-                        name="dailyBudget"
-                        min={0.5}
-                        max={20}
-                        step={0.5}
-                        defaultValue={3}
-                      />
-                    </label>
-                  </details>
-                </form>
-              ) : null}
-            </div>
-          )}
-
-          {view.current.length + view.held.length + finished.length + view.unfinished.length > 0 ? (
-            <ol className="works">
-              {view.current.map((r) => (
-                <Work key={r.id} run={r} />
-              ))}
-              {view.held.map((r) => (
-                <Work key={r.id} run={r} note="It passed every check; the factory rated it high risk.">
-                  {owner ? (
-                    <form action={approveRunAction}>
-                      <input type="hidden" name="runId" value={r.id} />
-                      <input type="hidden" name="from" value="home" />
-                      <button type="submit" className="button button-soft">
-                        Approve
-                      </button>
-                    </form>
+                </p>
+              </div>
+            ) : here ? (
+              <div className="session-now">
+                <p>
+                  <strong className="tone-now">
+                    {here.status === 'in_progress'
+                      ? `Running for ${elapsed(here.startedAt, Date.now())}`
+                      : 'Starting: GitHub picks it up within a minute'}
+                  </strong>
+                  {here.status === 'in_progress' && view.current.length === 0 ? (
+                    <span className="muted">
+                      {' '}
+                      Between issues: choosing the next one, or waiting on a deploy and testing the live site.
+                    </span>
                   ) : null}
-                </Work>
-              ))}
-              {finished.map((r) => (
-                <Work key={r.id} run={r} />
-              ))}
-              {view.unfinished.map((r) => (
-                <Work key={r.id} run={r} note="Left unfinished; the next session runs it again." />
-              ))}
-            </ol>
-          ) : null}
+                </p>
+                {owner ? (
+                  <form action={stopSessionAction}>
+                    <input type="hidden" name="runId" value={here.id} />
+                    <input type="hidden" name="from" value="home" />
+                    <SubmitButton pending="Stopping…" className="button button-quiet">
+                      Stop session
+                    </SubmitButton>
+                  </form>
+                ) : null}
+              </div>
+            ) : (
+              <div className="session-now">
+                <p className="muted">
+                  Not running.{last ? ` The last session ended ${utc(last.updatedAt)}.` : ''}
+                </p>
+                {owner ? (
+                  <form action={startSessionAction} className="session-start">
+                    <input type="hidden" name="from" value="home" />
+                    <SubmitButton pending="Starting…" disabled={ready === 0}>
+                      Start session
+                    </SubmitButton>
+                    <span className="muted">
+                      {ready > 0
+                        ? `Builds the ${ready} ready, in order.`
+                        : view.held.length > 0 && (backlog?.blocked.length ?? 0) > 0
+                          ? 'Nothing is ready: the queue is waiting on a change that needs your approval.'
+                          : 'Nothing is ready to build.'}
+                    </span>
+                    <details>
+                      <summary>Limits</summary>
+                      <label className="field-inline">
+                        Issues, at most
+                        <input type="number" name="maxRuns" min={1} max={20} defaultValue={5} />
+                      </label>
+                      <label className="field-inline">
+                        Daily budget, USD
+                        <input
+                          type="number"
+                          name="dailyBudget"
+                          min={0.5}
+                          max={20}
+                          step={0.5}
+                          defaultValue={3}
+                        />
+                      </label>
+                    </details>
+                  </form>
+                ) : null}
+              </div>
+            )}
 
-          {earlier.length > 0 ? (
-            <>
-              <h3 className="works-earlier">{here ? 'Before this session' : 'Latest results'}</h3>
+            {shown > 0 ? (
               <ol className="works">
-                {earlier.map((r) => (
-                  <Work key={r.id} run={r} note={utc(r.updatedAt)} />
+                {view.current.map((r) => (
+                  <Work key={r.id} run={r} />
+                ))}
+                {finished.map((r) => (
+                  <Work key={r.id} run={r} />
+                ))}
+                {view.unfinished.map((r) => (
+                  <Work key={r.id} run={r} note="Left unfinished; the next session runs it again." />
                 ))}
               </ol>
-            </>
-          ) : view.current.length + view.held.length + finished.length + view.unfinished.length === 0 ? (
-            <p className="muted">Nothing has been built{repo ? ` on ${name}` : ''} yet.</p>
-          ) : null}
-        </section>
+            ) : null}
+
+            {earlier.length > 0 ? (
+              <>
+                <h3 className="works-earlier">{here ? 'Before this session' : 'Latest results'}</h3>
+                <ol className="works">
+                  {earlier.map((r) => (
+                    <Work key={r.id} run={r} note={utc(r.updatedAt)} />
+                  ))}
+                </ol>
+              </>
+            ) : shown === 0 && view.held.length === 0 ? (
+              <p className="muted">Nothing has been built{repo ? ` on ${name}` : ''} yet.</p>
+            ) : null}
+          </section>
+        </div>
       </div>
     </>
   );
