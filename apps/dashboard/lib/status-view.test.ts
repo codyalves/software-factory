@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  approvalInProgress,
   checkState,
   currentStep,
   type SessionRecord,
@@ -106,6 +107,23 @@ describe('statusView', () => {
 
     expect(view.current.map((r) => r.issueNumber)).toEqual([1]);
     expect(view.unfinished).toEqual([]);
+  });
+});
+
+describe('approvalInProgress', () => {
+  it('reads the run an approval is shipping from its step name', () => {
+    expect(
+      approvalInProgress([
+        'Install',
+        'Approve run 41f189e1-3be9-4e63-bfd0-8f8ed865b757',
+        'Keep the audit log',
+      ]),
+    ).toBe('41f189e1-3be9-4e63-bfd0-8f8ed865b757');
+  });
+
+  it('finds none in a session that is building, or before the steps are known', () => {
+    expect(approvalInProgress(['Work through demo/site (factory:ready)'])).toBeNull();
+    expect(approvalInProgress([])).toBeNull();
   });
 });
 

@@ -99,6 +99,17 @@ export function sessionProject(
   return touched[0]?.repo ?? null;
 }
 
+const APPROVE_STEP = /^Approve run ([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$/;
+
+/** The run an approval is shipping, read from the step factory-approve names after it. */
+export function approvalInProgress(stepNames: readonly string[]): string | null {
+  for (const name of stepNames) {
+    const match = APPROVE_STEP.exec(name);
+    if (match?.[1]) return match[1];
+  }
+  return null;
+}
+
 /** A factory workflow run on GitHub Actions, running or finished. */
 export interface SessionRecord {
   readonly id: number;
