@@ -5,6 +5,8 @@ import {
   type SessionRecord,
   type SiteQueryData,
   type StatusRun,
+  sessionProject,
+  sessionTally,
   siteState,
   splitSessions,
   statusView,
@@ -70,6 +72,55 @@ describe('statusView', () => {
 
     expect(view.outcomes.map((r) => r.id)).toEqual(['second']);
   });
+
+  it('separates what the running session finished from what came before it', () => {
+    const view = statusView(
+      [
+        run(3, 'Escalated', '2026-11-25T23:50:00.000Z'),
+        run(2, 'Merged', '2026-11-25T23:42:00.000Z'),
+        run(1, 'Merged', '2026-11-21T02:36:00.000Z'),
+      ],
+      '2026-11-25T23:38:04Z',
+    );
+
+    expect(view.session.map((r) => r.issueNumber)).toEqual([3, 2]);
+    expect(view.outcomes.map((r) => r.issueNumber)).toEqual([1]);
+    expect(sessionTally(view.session)).toEqual({ shipped: 1, stopped: 1 });
+  });
+
+  it('shows a moving run as current when it cannot tell whether a session is running', () => {
+    const view = statusView([run(1, 'Gating', '2026-11-25T20:52:00.000Z')], null, { sessionKnown: false });
+
+    expect(view.current.map((r) => r.issueNumber)).toEqual([1]);
+    expect(view.unfinished).toEqual([]);
+  });
+});
+
+describe('sessionProject', () => {
+  const started = '2026-11-25T23:38:04Z';
+
+  it('reads the project from the step a backlog session names after it', () => {
+    expect(sessionProject(['Install', 'Work through codyalves/brewery (factory:ready)'], [], started)).toBe(
+      'codyalves/brewery',
+    );
+  });
+
+  it('reads the project from the step a single run names after it', () => {
+    expect(sessionProject(['Run the factory on demo/site.app#12'], [], started)).toBe('demo/site.app');
+  });
+
+  it('falls back to the project of the run that changed most recently since the session started', () => {
+    const runs = [
+      { ...run(4, 'Merged', '2026-11-21T02:36:00.000Z'), repo: 'demo/old' },
+      { ...run(1, 'Merged', '2026-11-25T23:42:00.000Z'), repo: 'demo/site' },
+    ];
+
+    expect(sessionProject(['Install'], runs, started)).toBe('demo/site');
+  });
+
+  it('does not guess when no step names a project and no run has changed', () => {
+    expect(sessionProject(['Install'], [run(1, 'Merged', '2026-11-21T02:36:00.000Z')], started)).toBeNull();
+  });
 });
 
 describe('sessions', () => {
@@ -114,6 +165,7 @@ describe('siteState', () => {
   // The shape GitHub's GraphQL API returned for codyalves/brewery on 2026-11-25.
   const data: SiteQueryData = {
     repository: {
+      issues: { totalCount: 6 },
       pullRequests: {
         nodes: [
           {
@@ -178,7 +230,11 @@ describe('siteState', () => {
   });
 
   it('shows nothing, rather than failing, for a repository or branch GitHub does not return', () => {
-    expect(siteState({ repository: null }, 'Vercel')).toEqual({ commits: [], pulls: [] });
+    expect(siteState({ repository: null }, 'Vercel')).toEqual({ commits: [], pulls: [], readyIssues: 0 });
+  });
+
+  it('counts the open issues marked ready', () => {
+    expect(siteState(data, 'Vercel').readyIssues).toBe(6);
   });
 
   it('reduces GitHub states to four', () => {
