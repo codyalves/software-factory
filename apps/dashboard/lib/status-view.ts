@@ -16,9 +16,11 @@ export interface StatusRun {
 export interface StatusView {
   /** Being worked on by the session that is running now. */
   readonly current: readonly StatusRun[];
+  /** Finished or held since the running session started, most recently changed first. */
+  readonly session: readonly StatusRun[];
   /** Started and not finished, with no session working on them: a session ended or was stopped first. */
   readonly unfinished: readonly StatusRun[];
-  /** Finished or held for the owner, most recently changed first. */
+  /** Finished or held before that, most recently changed first. */
   readonly outcomes: readonly StatusRun[];
 }
 
@@ -27,16 +29,18 @@ function moving(state: string): boolean {
 }
 
 /**
- * Sorts the latest run of each issue into what is happening now, what was
- * left behind, and what is done. `runs` is newest first, as the record lists
- * them. A run counts as current only if it changed since the active session
- * started: sessions share one slot across projects, so a run nobody has
- * touched since then belongs to an earlier session, not this one.
+ * Sorts the latest run of each issue into what is happening now, what this
+ * session has finished, what was left behind, and what came before. `runs` is
+ * newest first, as the record lists them. A run belongs to the running session
+ * only if it changed since that session started: sessions share one slot
+ * across projects, so a run nobody has touched since then is an earlier
+ * session's. With `sessionKnown` false (GitHub could not say whether a session
+ * is running) a moving run is shown as current rather than as left behind.
  */
 export function statusView(
   runs: readonly StatusRun[],
   sessionStartedAt: string | null,
-  outcomeLimit = 6,
+  { sessionKnown = true, outcomeLimit = 6 }: { sessionKnown?: boolean; outcomeLimit?: number } = {},
 ): StatusView {
   const seen = new Set<string>();
   const latest = runs.filter((r) => {
@@ -48,14 +52,46 @@ export function statusView(
   const inSession = (r: StatusRun) =>
     sessionStartedAt !== null && Date.parse(r.updatedAt) >= Date.parse(sessionStartedAt);
   const active = latest.filter((r) => moving(r.state));
+  const done = latest
+    .filter((r) => !moving(r.state))
+    .sort((a, b) => Date.parse(b.updatedAt) - Date.parse(a.updatedAt));
   return {
-    current: active.filter(inSession),
-    unfinished: active.filter((r) => !inSession(r)),
-    outcomes: latest
-      .filter((r) => !moving(r.state))
-      .sort((a, b) => Date.parse(b.updatedAt) - Date.parse(a.updatedAt))
-      .slice(0, outcomeLimit),
+    current: active.filter((r) => !sessionKnown || inSession(r)),
+    session: done.filter(inSession),
+    unfinished: active.filter((r) => sessionKnown && !inSession(r)),
+    outcomes: done.filter((r) => !inSession(r)).slice(0, outcomeLimit),
   };
+}
+
+/** What a session has to show so far: issues shipped, and issues that stopped short of that. */
+export function sessionTally(session: readonly StatusRun[]): { shipped: number; stopped: number } {
+  const shipped = session.filter((r) => r.state === 'Merged').length;
+  return { shipped, stopped: session.length - shipped };
+}
+
+const STEP_PROJECT = /^(?:Work through|Run the factory on) ([A-Za-z0-9-]+\/[A-Za-z0-9._-]+)/;
+
+/**
+ * The project a running session is working on. Sessions share one slot, and
+ * the project is an input GitHub does not report on a workflow run, so it is
+ * read from the step the workflows name after it ("Work through owner/repo
+ * (label)", "Run the factory on owner/repo#12"). Failing that, it is the
+ * project of the run that changed most recently since the session started.
+ */
+export function sessionProject(
+  stepNames: readonly string[],
+  runs: readonly StatusRun[],
+  sessionStartedAt: string,
+): string | null {
+  for (const name of stepNames) {
+    const match = STEP_PROJECT.exec(name);
+    if (match?.[1]) return match[1];
+  }
+  const since = Date.parse(sessionStartedAt);
+  const touched = runs
+    .filter((r) => Date.parse(r.updatedAt) >= since)
+    .sort((a, b) => Date.parse(b.updatedAt) - Date.parse(a.updatedAt));
+  return touched[0]?.repo ?? null;
 }
 
 /** A factory workflow run on GitHub Actions, running or finished. */
@@ -122,11 +158,14 @@ export interface SiteState {
   /** The base branch, newest first. The first commit is what production should be running. */
   readonly commits: readonly SiteCommit[];
   readonly pulls: readonly SitePull[];
+  /** Open issues carrying the ready label: the backlog, counting any issue in progress. */
+  readonly readyIssues: number;
 }
 
 /** The shape of SITE_QUERY's answer (lib/control.ts). */
 export interface SiteQueryData {
   readonly repository: {
+    readonly issues: { readonly totalCount: number };
     readonly pullRequests: {
       readonly nodes: readonly {
         readonly number: number;
@@ -197,5 +236,6 @@ export function siteState(data: SiteQueryData, statusContext: string): SiteState
       openedAt: p.createdAt,
       checks: checkState(p.commits.nodes[0]?.commit.statusCheckRollup?.state),
     })),
+    readyIssues: repo?.issues.totalCount ?? 0,
   };
 }

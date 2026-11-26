@@ -7,7 +7,7 @@ pauses or spends.
 
 | Page | Shows |
 | --- | --- |
-| Status | What is happening now: the session and the step it is on, the run in progress with its latest checks and events, runs a session left unfinished, and the target itself (open pull requests with their checks, the latest commits on its base branch, and whether each reached production) |
+| Status | What is happening now, on the project the running session is working on: the session with what it has shipped and how much backlog is left, the run in progress with its latest checks and events, what the session has finished, runs an earlier session left unfinished, and the target itself (open pull requests with their checks, the latest commits on its base branch, and whether each reached production) |
 | Runs | Every issue picked up: state, risk, attempts, spend, pull request |
 | Run record | One run in order: triage answers and how confident each was, the numbered acceptance criteria, every attempt with its check results and output, measured risk, the criterion-to-test trace, cost by model, and the run's events in the audit chain |
 | Traceability | Every requirement, criterion by criterion, with the tests that prove it and the commit they ran on |
@@ -23,6 +23,15 @@ URL and deploy signal from `gates/targets.json`, the file the factory's own
 production check uses. It refreshes every 15 seconds while a session or a run
 is moving, at three GitHub calls a refresh. Without the control panel it shows
 the runs from the record and says what it cannot read.
+
+The status page follows the session, not the project switcher. Sessions share
+one slot across projects, so while one runs the page shows its project and
+says so if the switcher is set to another. GitHub does not report a workflow
+run's inputs, so the project is read from the step the workflows name after
+it ("Work through owner/repo (label)"); renaming that step in
+`factory-backlog.yml` or `factory-run.yml` means updating `sessionProject` in
+`apps/dashboard/lib/status-view.ts`. With no session running, the page shows
+the switcher's project.
 
 ## Run it locally
 

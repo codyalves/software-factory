@@ -4,10 +4,17 @@ import Link from 'next/link';
 import { AuditThread, isBookkeeping } from '@/components/audit-thread';
 import { LiveRefresh } from '@/components/live-refresh';
 import { StateStamp } from '@/components/stamps';
-import { controlConfig, currentProject, readSite, recentSessions, sessionStep } from '@/lib/control';
+import { controlConfig, currentProject, readSite, recentSessions, sessionSteps } from '@/lib/control';
 import { factoryStatus, reports } from '@/lib/data';
 import { shortSha, usd, utc } from '@/lib/format';
-import { type CheckState, type StatusRun, splitSessions, statusView } from '@/lib/status-view';
+import {
+  type CheckState,
+  type StatusRun,
+  sessionProject,
+  sessionTally,
+  splitSessions,
+  statusView,
+} from '@/lib/status-view';
 import { targetSite } from '@/lib/targets';
 
 export const metadata: Metadata = { title: 'Status' };
@@ -108,27 +115,51 @@ function RunCard({ run, report, anyRepo }: { run: StatusRun; report: RunReport |
   );
 }
 
+function Outcomes({ runs, anyRepo }: { runs: readonly StatusRun[]; anyRepo: boolean }) {
+  return (
+    <ol className="feed-list">
+      {runs.map((r) => (
+        <li key={r.id}>
+          <StateStamp state={r.state} />
+          <Link href={`/runs/${r.id}`}>
+            {anyRepo ? `${r.repo}#${r.issueNumber}` : `#${r.issueNumber}`} {r.title}
+          </Link>
+          <span className="muted">{utc(r.updatedAt)}</span>
+        </li>
+      ))}
+    </ol>
+  );
+}
+
 export default async function StatusPage() {
   const config = controlConfig();
-  const repo = config ? await currentProject(config) : null;
+  const picked = config ? await currentProject(config) : null;
   const [status, allRuns, sessions] = await Promise.all([
     factoryStatus(),
     reports().listRuns({ limit: 200 }),
     config ? read(recentSessions(config).then(splitSessions)) : Promise.resolve(null),
   ]);
-  const runs = repo ? allRuns.filter((r) => r.repo === repo) : allRuns;
   const active = sessions?.ok ? sessions.value.active : null;
   const last = sessions?.ok ? sessions.value.last : null;
+  const steps =
+    config && active?.status === 'in_progress'
+      ? await sessionSteps(config, active.id).catch(() => null)
+      : null;
+
+  // The page follows the session: sessions share one slot across projects, so
+  // while one runs, its project is the one worth showing, whatever the
+  // switcher says. With nothing running it shows the switcher's project.
+  const working = active ? sessionProject(steps?.names ?? [], allRuns, active.startedAt) : null;
+  const repo = working ?? picked;
+  const runs = repo ? allRuns.filter((r) => r.repo === repo) : allRuns;
   // Without a session reading (no control panel, or GitHub did not answer), a
   // moving run cannot be told from one left behind, so it is shown as moving.
-  const view = statusView(runs, sessions?.ok ? (active?.startedAt ?? null) : new Date(0).toISOString());
+  const view = statusView(runs, active?.startedAt ?? null, { sessionKnown: sessions?.ok === true });
+  const tally = sessionTally(view.session);
   const site = repo ? targetSite(repo) : null;
   const detailed = [...view.current, ...view.unfinished].slice(0, DETAILED_RUNS);
 
-  const [step, github, reportList] = await Promise.all([
-    config && active?.status === 'in_progress'
-      ? sessionStep(config, active.id).catch(() => null)
-      : Promise.resolve(null),
+  const [github, reportList] = await Promise.all([
     config && repo && site ? read(readSite(config, repo, site)) : Promise.resolve(null),
     Promise.all(detailed.map((r) => reports().runReport(r.id))),
   ]);
@@ -141,22 +172,41 @@ export default async function StatusPage() {
       <header className="page-head">
         <h1>Status</h1>
         <p className="lede">
-          What the factory is doing {repo ? `on ${repo} ` : ''}right now, and what is on the site. Start or
-          stop a session from the <Link href="/backlog">backlog</Link>.
+          {active && working ? (
+            <>
+              The factory is working on <strong>{working}</strong>.
+            </>
+          ) : active ? (
+            <>A session is {active.status === 'in_progress' ? 'starting' : 'queued'}.</>
+          ) : sessions?.ok ? (
+            <>The factory is idle.</>
+          ) : null}{' '}
+          {repo && !(active && working) ? (
+            <>
+              Showing <strong>{repo}</strong>, the selected project.{' '}
+            </>
+          ) : null}
+          Start or stop a session from the <Link href="/backlog">backlog</Link>.
         </p>
         <LiveRefresh active={active !== null || view.current.length > 0} everyMs={15_000} />
       </header>
 
-      <section className="panel-box" aria-labelledby="factory">
-        <h2 id="factory">Factory</h2>
+      {working && picked && working !== picked ? (
+        <p className="notice">
+          This page follows the running session, which is on {working}. The project switcher is set to{' '}
+          {picked}; the other pages still show that one.
+        </p>
+      ) : null}
+
+      <section className="panel-box" aria-labelledby="session">
+        <h2 id="session">Session</h2>
         <dl className="fields">
           <div>
             <dt>Session</dt>
             <dd>
               {active ? (
                 <a href={active.url}>
-                  {active.workflow}{' '}
-                  {active.status === 'in_progress' ? `running since ${utc(active.startedAt)}` : 'queued'}
+                  {active.status === 'in_progress' ? `Running since ${utc(active.startedAt)}` : 'Queued'}
                 </a>
               ) : !sessions ? (
                 <span className="muted">Unknown: the control panel is not set up</span>
@@ -169,8 +219,11 @@ export default async function StatusPage() {
           </div>
           {active ? (
             <div>
-              <dt>Step</dt>
-              <dd>{step ?? <span className="muted">Between steps</span>}</dd>
+              <dt>So far</dt>
+              <dd>
+                {tally.shipped} shipped
+                {tally.stopped > 0 ? <span className="fail">, {tally.stopped} stopped short</span> : null}
+              </dd>
             </div>
           ) : last ? (
             <div>
@@ -183,21 +236,34 @@ export default async function StatusPage() {
               </dd>
             </div>
           ) : null}
+          {github?.ok ? (
+            <div>
+              <dt>Backlog</dt>
+              <dd>
+                <Link href="/backlog">
+                  {github.value.readyIssues} ready {github.value.readyIssues === 1 ? 'issue' : 'issues'}
+                </Link>
+                {view.current.length > 0 ? (
+                  <span className="muted">, counting the one in progress</span>
+                ) : null}
+              </dd>
+            </div>
+          ) : null}
           <div>
             <dt>Spent today</dt>
             <dd>
               {usd(status.spentTodayUsd)} of {usd(status.dailyBudgetUsd)}
             </dd>
           </div>
-          <div>
-            <dt>New work</dt>
-            <dd>{status.paused ? 'Paused' : 'Accepted'}</dd>
-          </div>
+          {status.paused ? (
+            <div>
+              <dt>New work</dt>
+              <dd className="fail">Paused</dd>
+            </div>
+          ) : null}
         </dl>
-        {active ? (
-          <p className="muted">
-            Sessions share one slot across projects; the step names the project this one is working through.
-          </p>
+        {active?.status === 'in_progress' ? (
+          <p className="muted">Workflow step: {steps?.current ?? 'between steps'}</p>
         ) : null}
       </section>
 
@@ -205,9 +271,11 @@ export default async function StatusPage() {
         <h2 id="now">Working on now</h2>
         {view.current.length === 0 ? (
           <div className="empty">
-            {active
-              ? 'The session is running, but no run on this project has changed since it started.'
-              : 'Nothing is being built right now.'}
+            {active?.status === 'in_progress'
+              ? 'Between issues: the session is choosing the next issue, or waiting for a deploy and testing the live site.'
+              : active
+                ? 'The session is queued and has not started an issue yet.'
+                : 'Nothing is being built right now.'}
           </div>
         ) : (
           view.current.map((r) => (
@@ -215,6 +283,17 @@ export default async function StatusPage() {
           ))
         )}
       </section>
+
+      {active ? (
+        <section className="feed" aria-labelledby="finished">
+          <h2 id="finished">Finished this session</h2>
+          {view.session.length === 0 ? (
+            <div className="empty">Nothing has finished yet in this session.</div>
+          ) : (
+            <Outcomes runs={view.session} anyRepo={!repo} />
+          )}
+        </section>
+      ) : null}
 
       {view.unfinished.length > 0 ? (
         <section aria-labelledby="unfinished">
@@ -360,21 +439,13 @@ export default async function StatusPage() {
       </section>
 
       <section className="feed" aria-labelledby="outcomes">
-        <h2 id="outcomes">Latest outcomes</h2>
+        <h2 id="outcomes">{active ? 'Earlier outcomes' : 'Latest outcomes'}</h2>
         {view.outcomes.length === 0 ? (
-          <div className="empty">No run has finished{repo ? ` on ${repo}` : ''} yet.</div>
+          <div className="empty">
+            No run has finished{repo ? ` on ${repo}` : ''} {active ? 'before this session' : 'yet'}.
+          </div>
         ) : (
-          <ol className="feed-list">
-            {view.outcomes.map((r) => (
-              <li key={r.id}>
-                <StateStamp state={r.state} />
-                <Link href={`/runs/${r.id}`}>
-                  {repo ? `#${r.issueNumber}` : `${r.repo}#${r.issueNumber}`} {r.title}
-                </Link>
-                <span className="muted">{utc(r.updatedAt)}</span>
-              </li>
-            ))}
-          </ol>
+          <Outcomes runs={view.outcomes} anyRepo={!repo} />
         )}
       </section>
     </>

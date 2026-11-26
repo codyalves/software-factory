@@ -1,5 +1,5 @@
 import { randomBytes } from 'node:crypto';
-import type { ForgeIssue } from '@factory/domain';
+import { type ForgeIssue, READY_LABEL } from '@factory/domain';
 import { GitHubAppAuth, GitHubForge, githubRequest, parsePrivateKey } from '@factory/github';
 import { cookies } from 'next/headers';
 import { reports } from './data';
@@ -183,23 +183,29 @@ export async function recentSessions(config: ControlConfig): Promise<SessionReco
     }));
 }
 
-/** The step a session's job is on now, by its name in the workflow; null between steps or once done. */
-export async function sessionStep(config: ControlConfig, runId: number): Promise<string | null> {
+/** The names of a session's steps, and the one it is on now (null between steps or once done). */
+export async function sessionSteps(
+  config: ControlConfig,
+  runId: number,
+): Promise<{ names: string[]; current: string | null }> {
   const request = await appRequest(config, config.factoryRepo);
   const { jobs } = await githubRequest<{ jobs: { steps?: { name: string; status: string }[] }[] }>(
     request,
     'GET',
     `/repos/${config.factoryRepo}/actions/runs/${runId}/jobs?per_page=10`,
   );
-  return currentStep(jobs.flatMap((j) => j.steps ?? []));
+  const steps = jobs.flatMap((j) => j.steps ?? []);
+  return { names: steps.map((s) => s.name), current: currentStep(steps) };
 }
 
-// One call for everything the status page shows about the target: open pull
-// requests with their checks, and the base branch's latest commits with their
+// One call for everything the status page shows about the target: how many
+// issues are ready, open pull requests with their checks, and the base
+// branch's latest commits with their
 // checks and production deploy (as a deployment or as a commit status).
 const SITE_QUERY = `
-query($owner: String!, $name: String!, $branch: String!, $environment: String!) {
+query($owner: String!, $name: String!, $branch: String!, $environment: String!, $ready: String!) {
   repository(owner: $owner, name: $name) {
+    issues(states: OPEN, labels: [$ready]) { totalCount }
     pullRequests(states: OPEN, first: 20, orderBy: { field: CREATED_AT, direction: DESC }) {
       nodes {
         number title url isDraft createdAt headRefName
@@ -237,6 +243,7 @@ export async function readSite(config: ControlConfig, repo: string, site: Target
         name,
         branch: `refs/heads/${site.baseBranch}`,
         environment: site.production?.environment ?? 'Production',
+        ready: READY_LABEL,
       },
     },
   );
