@@ -35,6 +35,11 @@ async function owner() {
   return { config, login, repo: await currentProject(config) };
 }
 
+/** The home screen and the fuller pages share these actions; each returns you to where you pressed. */
+function fromHome(form: FormData): boolean {
+  return form.get('from') === 'home';
+}
+
 export interface RequestFormState {
   readonly error: string | null;
   /** Criteria the free check found too vague to test, and why. */
@@ -96,7 +101,7 @@ export async function startSessionAction(form: FormData): Promise<void> {
   const dailyBudget = Math.min(Math.max(Number(form.get('dailyBudget')) || 3, 0.5), 20);
   await startBacklogSession(config, repo, { maxRuns, dailyBudget, requestedBy: login });
   revalidatePath('/backlog');
-  redirect('/backlog?started=1');
+  redirect(`${fromHome(form) ? '/' : '/backlog'}?started=1`);
 }
 
 export async function stopSessionAction(form: FormData): Promise<void> {
@@ -106,7 +111,7 @@ export async function stopSessionAction(form: FormData): Promise<void> {
   if (!running.some((s) => s.id === runId)) throw new Error('That session is not running.');
   await stopSession(config, runId);
   revalidatePath('/backlog');
-  redirect('/backlog?stopped=1');
+  redirect(`${fromHome(form) ? '/' : '/backlog'}?stopped=1`);
 }
 
 const RUN_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
@@ -124,7 +129,7 @@ export async function approveRunAction(form: FormData): Promise<void> {
   if (run?.state !== 'Reviewing') throw new Error('That run is not held for review.');
   await approveHeldRun(config, { runId, requestedBy: login });
   revalidatePath('/status');
-  redirect(`/status?approved=${run.issueNumber}`);
+  redirect(`${fromHome(form) ? '/' : '/status'}?approved=${run.issueNumber}`);
 }
 
 /** Switching projects only changes what the workspace shows, so anyone may do it. */
@@ -224,5 +229,6 @@ export async function filePlanAction(previous: PlanState, form: FormData): Promi
     }
   }
   revalidatePath('/backlog');
-  redirect(`/backlog?planned=${filed.join(',')}`);
+  // A plan is drafted and filed on the home screen, so that is where it lands.
+  redirect(`/?planned=${filed.join(',')}`);
 }
