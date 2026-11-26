@@ -1,10 +1,18 @@
 import type { RunReport } from '@factory/db';
 import type { Metadata } from 'next';
 import Link from 'next/link';
+import { approveRunAction } from '@/app/actions';
 import { AuditThread, isBookkeeping } from '@/components/audit-thread';
 import { LiveRefresh } from '@/components/live-refresh';
 import { StateStamp } from '@/components/stamps';
-import { controlConfig, currentProject, readSite, recentSessions, sessionSteps } from '@/lib/control';
+import {
+  controlConfig,
+  currentOwner,
+  currentProject,
+  readSite,
+  recentSessions,
+  sessionSteps,
+} from '@/lib/control';
 import { factoryStatus, reports } from '@/lib/data';
 import { shortSha, usd, utc } from '@/lib/format';
 import {
@@ -131,9 +139,11 @@ function Outcomes({ runs, anyRepo }: { runs: readonly StatusRun[]; anyRepo: bool
   );
 }
 
-export default async function StatusPage() {
+export default async function StatusPage({ searchParams }: { searchParams: Promise<{ approved?: string }> }) {
+  const { approved } = await searchParams;
   const config = controlConfig();
   const picked = config ? await currentProject(config) : null;
+  const owner = config ? await currentOwner() : null;
   const [status, allRuns, sessions] = await Promise.all([
     factoryStatus(),
     reports().listRuns({ limit: 200 }),
@@ -266,6 +276,81 @@ export default async function StatusPage() {
           <p className="muted">Workflow step: {steps?.current ?? 'between steps'}</p>
         ) : null}
       </section>
+
+      {approved && /^\d+$/.test(approved) ? (
+        <p className="notice" role="status">
+          Approval sent for #{approved}. The factory records it and merges the pull request once its checks
+          pass; this page follows it.
+        </p>
+      ) : null}
+
+      {view.held.length > 0 ? (
+        <section aria-labelledby="held">
+          <h2 id="held">Waiting for your approval</h2>
+          <p className="lede">
+            These passed every check, but the factory rated them high risk, so it will not ship them on its
+            own. Approving records your name in the audit log and merges the pull request; nothing needs doing
+            on GitHub.
+          </p>
+          {view.held.map((r) => {
+            const pull = github?.ok ? github.value.pulls.find((p) => p.url === r.pullRequestUrl) : undefined;
+            return (
+              <article key={r.id} className="attempt status-run">
+                <header>
+                  <h3>
+                    <Link href={`/runs/${r.id}`}>
+                      {repo ? `#${r.issueNumber}` : `${r.repo}#${r.issueNumber}`} {r.title}
+                    </Link>
+                  </h3>
+                  <StateStamp state={r.state} />
+                  <span className="muted">Held since {utc(r.updatedAt)}</span>
+                </header>
+                <dl className="fields">
+                  <div>
+                    <dt>Why it was held</dt>
+                    <dd>
+                      <Link href={`/runs/${r.id}`}>See the risk answers in its record</Link>
+                    </dd>
+                  </div>
+                  <div>
+                    <dt>Pull request</dt>
+                    <dd>
+                      {r.pullRequestUrl ? (
+                        <a href={r.pullRequestUrl}>#{r.pullRequestUrl.split('/').pop()}</a>
+                      ) : (
+                        <span className="muted">None</span>
+                      )}
+                    </dd>
+                  </div>
+                  <div>
+                    <dt>Its checks on GitHub</dt>
+                    <dd>
+                      {pull ? (
+                        <Check state={pull.checks} words={CHECK_WORDS} />
+                      ) : (
+                        <span className="muted">
+                          {github?.ok ? 'No longer open on GitHub' : 'Not read from GitHub'}
+                        </span>
+                      )}
+                    </dd>
+                  </div>
+                </dl>
+                {owner ? (
+                  <form action={approveRunAction} className="status-approve">
+                    <input type="hidden" name="runId" value={r.id} />
+                    <button type="submit">Approve and ship #{r.issueNumber}</button>
+                    {active ? <span className="muted">It starts when the running session ends.</span> : null}
+                  </form>
+                ) : (
+                  <p className="muted status-run-caption">
+                    {config ? 'Sign in as an owner to approve.' : 'Approving needs the control panel set up.'}
+                  </p>
+                )}
+              </article>
+            );
+          })}
+        </section>
+      ) : null}
 
       <section aria-labelledby="now">
         <h2 id="now">Working on now</h2>

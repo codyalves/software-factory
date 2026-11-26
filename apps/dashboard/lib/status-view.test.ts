@@ -88,6 +88,19 @@ describe('statusView', () => {
     expect(sessionTally(view.session)).toEqual({ shipped: 1, stopped: 1 });
   });
 
+  it('lists work held for the owner, oldest first, whichever session held it', () => {
+    const view = statusView(
+      [
+        run(3, 'Reviewing', '2026-11-25T23:50:00.000Z'),
+        run(2, 'Reviewing', '2026-11-25T23:44:00.000Z'),
+        run(1, 'Merged', '2026-11-25T23:42:00.000Z'),
+      ],
+      null,
+    );
+
+    expect(view.held.map((r) => r.issueNumber)).toEqual([2, 3]);
+  });
+
   it('shows a moving run as current when it cannot tell whether a session is running', () => {
     const view = statusView([run(1, 'Gating', '2026-11-25T20:52:00.000Z')], null, { sessionKnown: false });
 

@@ -1,0 +1,81 @@
+name: factory-approve
+
+# Ships one run that was held for the owner (high risk), on the owner's
+# approval: records who approved in the audit log, asks GitHub to merge the
+# pull request once the target's required checks pass, and watches until it
+# has. Started from the dashboard's Approve button, or by hand with a run id.
+# It calls no model, so it spends no API credit.
+on:
+  workflow_dispatch:
+    inputs:
+      run_id:
+        description: The held run's id (from its record on the dashboard)
+        required: true
+      requested_by:
+        description: Who approved, when started from the dashboard (recorded as the approver)
+        default: ''
+        required: false
+
+permissions:
+  contents: read
+
+# Shares the factory's one slot, so an approval never runs beside a session.
+concurrency:
+  group: factory-run
+  cancel-in-progress: false
+
+jobs:
+  factory-approve:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    # Secret names cannot start with GITHUB_, so the app's secrets are
+    # FACTORY_APP_*; the factory itself reads GITHUB_APP_* from its env.
+    env:
+      # Only the persistent factory database holds the run (docs/hosting.md).
+      DATABASE_URL: ${{ secrets.FACTORY_DATABASE_URL }}
+      GITHUB_APP_ID: ${{ secrets.FACTORY_APP_ID }}
+      GITHUB_APP_PRIVATE_KEY: ${{ secrets.FACTORY_APP_PRIVATE_KEY }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: pnpm/action-setup@v6
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 26
+          cache: pnpm
+
+      - name: Require the secrets
+        run: |
+          missing=""
+          [ -n "$DATABASE_URL" ] || missing="$missing FACTORY_DATABASE_URL"
+          [ -n "$GITHUB_APP_ID" ] || missing="$missing FACTORY_APP_ID"
+          [ -n "$GITHUB_APP_PRIVATE_KEY" ] || missing="$missing FACTORY_APP_PRIVATE_KEY"
+          if [ -n "$missing" ]; then
+            echo "Missing repository secrets:$missing (see docs/github-app.md)" | tee -a "$GITHUB_STEP_SUMMARY"
+            exit 1
+          fi
+
+      - name: Install
+        run: pnpm install --frozen-lockfile
+
+      - name: Approve run ${{ inputs.run_id }}
+        env:
+          RUN_ID: ${{ inputs.run_id }}
+          # The dashboard starts this as the factory's App; it names the owner who approved.
+          ACTOR: ${{ inputs.requested_by || github.actor }}
+        run: |
+          set -o pipefail
+          node apps/workers/src/approve-run.ts --run "$RUN_ID" --actor "$ACTOR" \
+            --report report.md --audit audit-log.json
+          cat report.md >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Keep the audit log
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: factory-approve-${{ github.run_number }}
+          path: |
+            report.md
+            audit-log.json
+          if-no-files-found: ignore

@@ -241,6 +241,32 @@ export class RunStore {
   }
 
   /**
+   * Moves one named run out of `from`, for a transition a person asks for
+   * rather than one the factory finds waiting. `decide` chooses the next
+   * state and writes its effects in the same transaction. Returns null when
+   * the run does not exist or is no longer in `from`, so asking twice is safe.
+   */
+  advanceRunWith(
+    runId: string,
+    from: RunState,
+    decide: (trx: Transaction<Database>, run: RunSummary) => Promise<{ to: RunState; reason: string }>,
+  ): Promise<RunSummary | null> {
+    return this.#db.transaction().execute(async (trx) => {
+      const row = await trx
+        .selectFrom('run')
+        .select(['id', 'requirement_id', 'state', 'implement_attempts'])
+        .where('id', '=', runId)
+        .forUpdate()
+        .executeTakeFirst();
+      if (!row || row.state !== from) return null;
+
+      const run = toSummary(row);
+      const next = await decide(trx, run);
+      return transition(trx, run, next.to, next.reason);
+    });
+  }
+
+  /**
    * Stops an active run: moves it to Cancelled and dead-letters its queued
    * and running steps, so no worker picks up work for it (a running step's
    * late result is refused, as for any step whose lease was taken back).

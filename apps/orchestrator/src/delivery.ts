@@ -383,6 +383,43 @@ export async function applyNextMergeResult(runs: Runs): Promise<string | null> {
   return run ? `run ${run.id} moved to ${run.state}` : null;
 }
 
+/**
+ * Reviewing -> Merging, when the owner approves work that was held for them.
+ * The approval and who gave it go in the audit log with the transition; from
+ * there the run ships like any other: the outbox asks GitHub to merge once
+ * the target's checks pass, and the merge step watches until it has. Returns
+ * null when the run is not held (already approved, or never held), so an
+ * approval sent twice does nothing the second time.
+ */
+export async function approveHeldRun(
+  runs: Pick<RunStore, 'advanceRunWith' | 'getIssue'>,
+  runId: string,
+  approver: string,
+): Promise<string | null> {
+  const run = await runs.advanceRunWith(runId, 'Reviewing', async (trx, run) => {
+    const issue = await issueOf(runs, run.id);
+    const { branch } = await trx
+      .selectFrom('run')
+      .select('branch')
+      .where('id', '=', run.id)
+      .executeTakeFirstOrThrow();
+    if (!branch) throw new Error(`run ${run.id} has no branch to merge`);
+    await appendAuditEvent(trx, run.id, 'delivery.approved', { approver });
+    const target = { repo: issue.repo, head: branch };
+    await enqueueOutbox(trx, run.id, 'pull_request.merge', target);
+    await enqueueStep(trx, {
+      runId: run.id,
+      kind: MERGE_STEP,
+      idempotencyKey: `${run.id}:merge:approved`,
+      payload: target,
+      timeoutMs: MERGE_TIMEOUT_MS,
+      maxAttempts: MERGE_ATTEMPTS,
+    });
+    return { to: 'Merging', reason: `approved by ${approver}` };
+  });
+  return run ? `run ${run.id} moved to ${run.state}` : null;
+}
+
 async function recordTrace(
   trx: Transaction<Database>,
   requirementId: string,
@@ -448,6 +485,6 @@ export function pullRequestBody(
     '',
     delivery.next === 'Merging'
       ? "The factory merges this automatically once the repository's required checks pass, and it ships with the next deployment."
-      : `Held for the owner's approval (${delivery.reason}). Merge it when you are satisfied.`,
+      : `Held for the owner's approval (${delivery.reason}). The owner approves it on the factory's dashboard; the factory then merges it once the repository's required checks pass.`,
   ].join('\n');
 }

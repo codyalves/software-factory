@@ -63,7 +63,8 @@ demo of demo data.
 With the settings below, the dashboard can also act: sign in with GitHub, plan
 a feature into issues and file them, file a single request (an issue labeled
 `factory:ready`), switch between the sites the factory builds, see the backlog in the order the
-factory will take it, and start or stop a backlog session. Without them it
+factory will take it, start or stop a backlog session, and approve work the
+factory held for the owner. Without them it
 stays read-only, and every page still works.
 
 How it stays safe:
@@ -78,6 +79,13 @@ How it stays safe:
   the owner's login as its actor; stopping cancels that workflow run. The
   dashboard's database login stays read-only, and the orchestrator stays the
   only writer of run state.
+- **Held work is approved here, not on the target.** High-risk work that
+  passed every check waits for the owner. The status page lists it under
+  "Waiting for your approval" with an Approve button. Approving dispatches the
+  `factory-approve` workflow with the run and the owner's login; the factory
+  records `delivery.approved` in the audit log, asks GitHub to merge once the
+  target's checks pass, and the run ends Merged (ADR 0008). It calls no model
+  and costs nothing. The workflow needs the `FACTORY_DATABASE_URL` secret.
 - **Requests are checked before they are filed.** A free check flags
   criteria a test cannot pin down ("improved", "exists", "fast" without a
   number) and says what to write instead. With `ANTHROPIC_API_KEY` set, the
